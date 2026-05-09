@@ -23,8 +23,21 @@ function loadSortable(cb) {
 
 function createAndInjectUI() {
   const $panel = $('<div/>', { id: 'psm-panel' });
-  const $toast = $('<div/>', { class: 'psm-toast' });
-  parent$('body', parentDoc).append($panel).append($toast);
+  const $inner = $('<div/>', { id: 'psm-panel-inner' });
+  const $toast = $('<div/>', { class: 'psm-toast', 'aria-live': 'polite', role: 'status' });
+  $panel.append($inner).append($toast);
+  parent$('body', parentDoc).append($panel);
+}
+
+// Stop pointer/focus/key bubbling so SillyTavern's AI drawer does not treat
+// interaction with PSM as an outside click / blur and auto-close.
+function bindPanelInteractionIsolation() {
+  const el = parent$('#psm-panel', parentDoc)[0];
+  if (!el || el.dataset.psmIsolate === '1') return;
+  el.dataset.psmIsolate = '1';
+  ['mousedown', 'pointerdown', 'click', 'touchstart', 'focusin', 'keydown'].forEach(type => {
+    el.addEventListener(type, ev => { ev.stopPropagation(); }, false);
+  });
 }
 
 // ─── Extension menu entry ─────────────────────────────────────────────────
@@ -46,11 +59,51 @@ function injectExtensionMenu() {
   });
 }
 
+const PSM_OPENAI_PRESET_WRAP_ID = 'psm-openai-preset-shortcut-wrap';
+
+function injectOpenaiRangePresetShortcut() {
+  if (parent$('#' + PSM_OPENAI_PRESET_WRAP_ID, parentDoc).length > 0) return true;
+  const $rb = parent$('#range_block_openai', parentDoc);
+  if (!$rb.length) return false;
+  const $nth = $rb.children().eq(9);
+  if (!$nth.length) return false;
+  const $wrap = $('<div/>', {
+    id:    PSM_OPENAI_PRESET_WRAP_ID,
+    class: 'flex-container flexGap5 alignItemsCenter wide100p',
+  }).css({ marginBottom: '6px' });
+  const $btn = $('<button/>', {
+    type:  'button',
+    id:    'psm-openai-preset-shortcut-btn',
+    class: 'menu_button menu_button_icon',
+    title: 'Snapshots for current preset',
+    html:  '<i class="fa-fw fa-solid fa-layer-group"></i>',
+  });
+  $btn.on('click', e => {
+    e.preventDefault();
+    e.stopPropagation();
+    openPanel({ openDetailForPreset: true });
+  });
+  $wrap.append($btn);
+  $nth.prepend($wrap);
+  return true;
+}
+
+function scheduleInjectOpenaiRangePresetShortcut() {
+  [0, 400, 1200, 2800].forEach(ms => {
+    window.parent.setTimeout(() => { injectOpenaiRangePresetShortcut(); }, ms);
+  });
+}
+
 // ─── Panel open / close ───────────────────────────────────────────────────
 
-function openPanel() {
-  panelOpen   = true;
-  currentView = 'browser';
+function openPanel(opts = {}) {
+  panelOpen = true;
+  if (opts.openDetailForPreset) {
+    detailPreset = currentPreset();
+    currentView  = 'detail';
+  } else {
+    currentView = 'browser';
+  }
   parent$('#psm-panel', parentDoc).addClass('open');
   renderView();
   window.parent.requestAnimationFrame(() => {

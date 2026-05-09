@@ -9,6 +9,10 @@ function headerHtml(title, showBack, extraBtns = '') {
   </div>`;
 }
 
+function psmContentRoot() {
+  return parent$('#psm-panel-inner', parentDoc);
+}
+
 // ─── Render dispatcher ────────────────────────────────────────────────────
 
 const VIEWS = { browser: renderBrowser, detail: renderDetail, note: renderNoteEdit };
@@ -83,10 +87,9 @@ function renderList() {
 }
 
 function renderBrowser() {
-  const $panel    = parent$('#psm-panel', parentDoc);
   const active    = currentPreset();
   const extraBtns = `<button class="psm-ghost psm-header-btn psm-active-link" id="psm-active-link" title="Go to active preset">${esc(active)}</button>`;
-  $panel.html(
+  psmContentRoot().html(
     headerHtml('PSM', false, extraBtns) +
     `<div class="psm-body">
       <input class="psm-filter" id="psm-filter" type="text" placeholder="🔍 filter presets…" value="${esc(filterText)}" />
@@ -553,7 +556,6 @@ function showFolderDropdown(folderName, anchorEl) {
 // ─── View 2: Preset detail ────────────────────────────────────────────────
 
 function renderDetail() {
-  const $panel   = parent$('#psm-panel', parentDoc);
   const db       = dbLoad();
   const active   = currentPreset();
   const pn       = detailPreset;
@@ -582,7 +584,7 @@ function renderDetail() {
       }).join('')
     : '<div class="psm-empty">No snapshots yet</div>';
 
-  $panel.html(
+  psmContentRoot().html(
     headerHtml(esc(pn), true, '<button class="psm-ghost psm-header-btn" id="psm-detail-info" title="Note">ℹ</button>') +
     `<div class="psm-body">
       ${isActive ? `<div class="psm-save-row">
@@ -661,7 +663,6 @@ function bindDetailEvents(pn, isActive) {
 // ─── View 3: Note edit ────────────────────────────────────────────────────
 
 function renderNoteEdit() {
-  const $panel  = parent$('#psm-panel', parentDoc);
   const meta    = metaLoad();
   const note    = (meta.presetNotes || {})[notePreset] || '';
   const folders = Object.keys(meta.folders || {});
@@ -670,7 +671,7 @@ function renderNoteEdit() {
   const folderOpts = `<option value="">— ungrouped —</option>` +
     folders.map(f => `<option value="${esc(f)}"${f === current ? ' selected' : ''}>${esc(f)}</option>`).join('');
 
-  $panel.html(
+  psmContentRoot().html(
     headerHtml(esc(notePreset) + ' · note', true) +
     `<div class="psm-body">
       <label class="psm-form-label">Folder</label>

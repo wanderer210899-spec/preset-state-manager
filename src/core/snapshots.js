@@ -98,7 +98,7 @@ async function psmApplyStates(presetName, snapName, snap) {
     confirmingSnaps.delete(snapKey(presetName, snapName));
     LOG('apply: "' + snapName + '" (' + snap.meta + ') — preset: "' + presetName + '"');
     renderView();
-    showToast('Applied "' + snapName + '"');
+    showToast('Snapshot applied successfully · ' + snapName);
   } catch(e) {
     ERR('psmApplyStates:', e);
   } finally {

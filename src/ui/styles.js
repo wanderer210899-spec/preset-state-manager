@@ -66,15 +66,19 @@ function injectStyles({ bgFallback = null, borderFallback = null, mutedFallback 
     #psm-panel {
       position: fixed !important; z-index: 99998 !important;
       width: min(320px, calc(100vw - 24px)) !important;
-      max-height: 80vh !important; overflow-y: auto !important;
-      -webkit-overflow-scrolling: touch !important;
+      max-height: 80vh !important; overflow: hidden !important;
+      display: none !important; flex-direction: column !important;
       background: ${bg} !important; border: 1px solid ${border} !important;
       border-radius: 12px !important; padding: 0 !important;
       font-size: ${fluid('body')} !important; color: ${muted} !important;
       font-family: ${bodyFont} !important;
-      display: none !important; box-sizing: border-box !important;
+      box-sizing: border-box !important;
     }
-    #psm-panel.open { display: block !important; }
+    #psm-panel.open { display: flex !important; }
+    #psm-panel-inner {
+      flex: 1 1 auto !important; min-height: 0 !important;
+      overflow-y: auto !important; -webkit-overflow-scrolling: touch !important;
+    }
     #psm-panel button, #psm-panel input, #psm-panel select, #psm-panel textarea {
       font-family: inherit !important; color: ${muted};
     }
@@ -313,12 +317,14 @@ function injectStyles({ bgFallback = null, borderFallback = null, mutedFallback 
     .psm-data-row .psm-danger:hover { background: oklch(from #E24B4A l c h / 0.08) !important; }
 
     .psm-toast {
-      position: fixed !important; bottom: 20px !important; left: 50% !important;
+      position: absolute !important; bottom: ${sp(0.75)} !important; left: 50% !important;
       transform: translateX(-50%) !important;
       background: ${bg} !important; border: 1px solid ${border} !important;
-      border-radius: 7px; padding: ${sp(0.75)} ${sp(2)}; font-size: ${px('caption')};
+      border-radius: 7px; padding: ${sp(0.75)} ${sp(1.25)}; font-size: ${px('caption')};
       color: ${muted} !important; opacity: 0; pointer-events: none; transition: opacity .2s;
-      z-index: 999999 !important; white-space: nowrap;
+      z-index: 3 !important; max-width: calc(100% - ${sp(2)}) !important;
+      white-space: normal !important; text-align: center !important; line-height: 1.35 !important;
+      box-shadow: 0 2px 10px oklch(0 0 0 / 0.2);
     }
     .psm-toast.show { opacity: 1 !important; }
 

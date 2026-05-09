@@ -2,6 +2,9 @@
 const fs   = require('fs');
 const path = require('path');
 
+// Bump this when you want new dist filenames (e.g. v6 → v7).
+const OUTPUT_VERSION = 'v6';
+
 // ─── Source files in load order ───────────────────────────────────────────
 // Order matters: each file can only call functions declared before it or in
 // files that appear earlier in this list.
@@ -55,9 +58,11 @@ function build() {
 
   // ── Output 1: plain .js (for testing / diffing) ────────────────────────
   fs.mkdirSync('dist', { recursive: true });
-  fs.writeFileSync('dist/preset-state-manager-v5.js', js, 'utf8');
+  const outJs   = `dist/preset-state-manager-${OUTPUT_VERSION}.js`;
+  const outJson = `dist/preset-state-manager-${OUTPUT_VERSION}.json`;
+  fs.writeFileSync(outJs, js, 'utf8');
 
-  // ── Output 2: importable JSON script ──────────────────────────────────
+  // ── Output 2: importable JSON script (TavernHelper metadata below) ────
   const scriptJson = JSON.stringify({
     type:    'script',
     enabled: true,
@@ -68,12 +73,12 @@ function build() {
     data:    {},
     content: js,
   }, null, 2);
-  fs.writeFileSync('dist/preset-state-manager-v5.json', scriptJson, 'utf8');
+  fs.writeFileSync(outJson, scriptJson, 'utf8');
 
   const lines = js.split('\n').length;
   console.log(`Build complete (${lines} lines)`);
-  console.log('  → dist/preset-state-manager-v5.js   (raw JS for testing)');
-  console.log('  → dist/preset-state-manager-v5.json (script import)');
+  console.log(`  → ${outJs}   (raw JS for testing)`);
+  console.log(`  → ${outJson} (script import)`);
 }
 
 build();

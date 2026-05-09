@@ -3,8 +3,10 @@
 function init() {
   injectStyles();
   createAndInjectUI();
+  bindPanelInteractionIsolation();
   bindHeaderDrag();
   injectExtensionMenu();
+  scheduleInjectOpenaiRangePresetShortcut();
 
   loadSortable(() => {
     // Register the permanent chat-ready state machine listeners.
@@ -32,7 +34,7 @@ function init() {
     } catch(e) { ERR('eventOn failed:', e); }
 
     $(window).on('pagehide', () => {
-      parent$('#psm-panel, .psm-toast, #' + STYLE_ID + ', #psm-wand-item', parentDoc).remove();
+      parent$('#psm-panel, #' + STYLE_ID + ', #psm-wand-item, #psm-openai-preset-shortcut-wrap', parentDoc).remove();
     });
 
     window.parent.addEventListener('resize', () => {
