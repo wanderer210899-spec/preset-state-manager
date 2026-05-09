@@ -96,6 +96,10 @@ async function psmApplyStates(presetName, snapName, snap) {
     await waitForChatReady();
 
     confirmingSnaps.delete(snapKey(presetName, snapName));
+    const m = metaLoad();
+    if (!m.activeSnaps) m.activeSnaps = {};
+    m.activeSnaps[presetName] = snapName;
+    metaSave(m);
     LOG('apply: "' + snapName + '" (' + snap.meta + ') — preset: "' + presetName + '"');
     renderView();
     showToast('Snapshot applied successfully · ' + snapName);
@@ -110,6 +114,11 @@ async function psmApplyStates(presetName, snapName, snap) {
 function psmDelete(presetName, snapName) {
   const db = dbLoad();
   if (db[presetName]) { delete db[presetName][snapName]; dbSave(db); }
+  const m = metaLoad();
+  if (m.activeSnaps?.[presetName] === snapName) {
+    delete m.activeSnaps[presetName];
+    metaSave(m);
+  }
   confirmingSnaps.delete(snapKey(presetName, snapName));
   deletingSnaps.delete(snapKey(presetName, snapName));
   LOG('delete: "' + snapName + '" — preset: "' + presetName + '"');

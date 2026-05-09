@@ -546,6 +546,10 @@ $((() => {
         border: 1px solid ${border}; border-radius: 6px; margin-bottom: ${sp(0.5)};
       }
       .psm-snap:last-child { margin-bottom: 0; }
+      .psm-snap--active {
+        border-color: var(--SmartThemeQuoteColor);
+        background: oklch(from var(--SmartThemeQuoteColor, #888) l c h / 0.08);
+      }
       .psm-snap-name { flex: 1; min-width: 0; font-size: ${fluid('body')} !important; word-break: break-all; cursor: pointer; }
       .psm-snap-meta { font-size: ${px('caption')}; white-space: nowrap; flex-shrink: 0; }
       .psm-snap-apply {
@@ -785,6 +789,10 @@ $((() => {
       await waitForChatReady();
   
       confirmingSnaps.delete(snapKey(presetName, snapName));
+      const m = metaLoad();
+      if (!m.activeSnaps) m.activeSnaps = {};
+      m.activeSnaps[presetName] = snapName;
+      metaSave(m);
       LOG('apply: "' + snapName + '" (' + snap.meta + ') — preset: "' + presetName + '"');
       renderView();
       showToast('Snapshot applied successfully · ' + snapName);
@@ -799,6 +807,11 @@ $((() => {
   function psmDelete(presetName, snapName) {
     const db = dbLoad();
     if (db[presetName]) { delete db[presetName][snapName]; dbSave(db); }
+    const m = metaLoad();
+    if (m.activeSnaps?.[presetName] === snapName) {
+      delete m.activeSnaps[presetName];
+      metaSave(m);
+    }
     confirmingSnaps.delete(snapKey(presetName, snapName));
     deletingSnaps.delete(snapKey(presetName, snapName));
     LOG('delete: "' + snapName + '" — preset: "' + presetName + '"');
@@ -1374,13 +1387,16 @@ $((() => {
     const keys     = Object.keys(snaps);
     const isActive = pn === active;
   
+    const activeSnap = (metaLoad().activeSnaps || {})[pn];
+  
     const snapHtml = keys.length
       ? keys.map(name => {
           const s          = snaps[name];
           const cKey       = snapKey(pn, name);
           const confirming = confirmingSnaps.has(cKey);
           const deleting   = deletingSnaps.has(cKey);
-          return `<div class="psm-snap">
+          const isActiveSn = name === activeSnap;
+          return `<div class="psm-snap${isActiveSn ? ' psm-snap--active' : ''}">
             <span class="psm-snap-name">${esc(name)}</span>
             <span class="psm-snap-meta">${esc(s.meta)}</span>
             ${confirming

@@ -563,13 +563,16 @@ function renderDetail() {
   const keys     = Object.keys(snaps);
   const isActive = pn === active;
 
+  const activeSnap = (metaLoad().activeSnaps || {})[pn];
+
   const snapHtml = keys.length
     ? keys.map(name => {
         const s          = snaps[name];
         const cKey       = snapKey(pn, name);
         const confirming = confirmingSnaps.has(cKey);
         const deleting   = deletingSnaps.has(cKey);
-        return `<div class="psm-snap">
+        const isActiveSn = name === activeSnap;
+        return `<div class="psm-snap${isActiveSn ? ' psm-snap--active' : ''}">
           <span class="psm-snap-name">${esc(name)}</span>
           <span class="psm-snap-meta">${esc(s.meta)}</span>
           ${confirming

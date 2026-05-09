@@ -235,6 +235,10 @@ function injectStyles({ bgFallback = null, borderFallback = null, mutedFallback 
       border: 1px solid ${border}; border-radius: 6px; margin-bottom: ${sp(0.5)};
     }
     .psm-snap:last-child { margin-bottom: 0; }
+    .psm-snap--active {
+      border-color: var(--SmartThemeQuoteColor);
+      background: oklch(from var(--SmartThemeQuoteColor, #888) l c h / 0.08);
+    }
     .psm-snap-name { flex: 1; min-width: 0; font-size: ${fluid('body')} !important; word-break: break-all; cursor: pointer; }
     .psm-snap-meta { font-size: ${px('caption')}; white-space: nowrap; flex-shrink: 0; }
     .psm-snap-apply {
