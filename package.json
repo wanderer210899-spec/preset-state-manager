@@ -1,0 +1,8 @@
+{
+  "name": "preset-state-manager",
+  "version": "4.0.0",
+  "description": "SillyTavern script: floating draggable overlay to save and apply prompt on/off state snapshots per preset.",
+  "scripts": {
+    "build": "node build.js"
+  }
+}
