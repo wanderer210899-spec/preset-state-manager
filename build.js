@@ -16,13 +16,20 @@ const srcFiles = [
   'src/ui/panel.js',        // all three panel views + event bindings
   'src/ui/toolbar.js',      // showToast, createAndInjectUI, drag, open/close
   'src/index.js',           // init()
+  'src/divs/divs-store.js',
+  'src/divs/divs-helpers.js',
+  'src/divs/divs-styles.js',
+  'src/divs/divs-decorator.js',
+  'src/divs/divs-panel.js',
+  'src/divs/divs-toolbar.js',
+  'src/divs/divs-index.js',
 ];
 
 // ─── IIFE shell ───────────────────────────────────────────────────────────
 // This is the outer wrapper that SillyTavern's script runner evaluates.
 // ERR / LOG / parentDoc / parent$ are declared here so every source file
 // can reference them freely.
-const HEADER = `$((() => {
+const HEADER = `(() => {
   const ERR = (...a) => console.error('[PSM ERROR]', ...a);
   const LOG = (...a) => console.log('[PSM]', ...a);
 
@@ -32,13 +39,17 @@ const HEADER = `$((() => {
     parent$   = window.parent.$;
   } catch(e) { ERR('Failed to access parent:', e); return; }
 
-  if (parent$('#psm-btn', parentDoc).length > 0) return;
+  const PSM_ALREADY_LOADED = parent$('#psm-panel, #psm-wand-item, #psm-openai-preset-shortcut-wrap', parentDoc).length > 0;
 
 `;
 
 const FOOTER = `
-  setTimeout(init, 500);
-}))();
+  if (!PSM_ALREADY_LOADED) {
+    setTimeout(init, 500);
+  } else {
+    LOG('PSM chrome already exists; skipped duplicate PSM init');
+  }
+})();
 `;
 
 // ─── Build ────────────────────────────────────────────────────────────────

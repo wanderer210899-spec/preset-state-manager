@@ -1,4 +1,4 @@
-$((() => {
+(() => {
   const ERR = (...a) => console.error('[PSM ERROR]', ...a);
   const LOG = (...a) => console.log('[PSM]', ...a);
 
@@ -8,7 +8,7 @@ $((() => {
     parent$   = window.parent.$;
   } catch(e) { ERR('Failed to access parent:', e); return; }
 
-  if (parent$('#psm-btn', parentDoc).length > 0) return;
+  const PSM_ALREADY_LOADED = parent$('#psm-panel, #psm-wand-item, #psm-openai-preset-shortcut-wrap', parentDoc).length > 0;
 
   // ─── store.js ────────────────────────────────────────────────────
 
@@ -1770,5 +1770,1588 @@ $((() => {
     });
   }
   
-  setTimeout(init, 500);
-}))();
+
+  // ─── divs-store.js ───────────────────────────────────────────────
+
+  // Prompt Folders storage. This file is the only writer to pdo_* localStorage.
+  
+  const PDO_STORE_KEY          = 'pdo_v1';
+  const PDO_COLLAPSE_KEY       = 'pdo_v1_collapse';
+  const PDO_POS_KEY            = 'pdo_v1_pos';
+  const PDO_HIDDEN_KEY         = 'pdo_v1_hidden';
+  const PDO_STYLE_ID           = 'pdo-styles';
+  const PDO_COLLAPSE_STYLE_ID  = 'pdo-collapse-rules';
+  const PDO_DEFAULT_ICON       = String.fromCodePoint(0x1F4C1);
+  
+  function pdoDefaultDb() {
+    return { version: 1, perPreset: {}, templates: {} };
+  }
+  
+  function pdoClone(obj) {
+    return JSON.parse(JSON.stringify(obj || {}));
+  }
+  
+  function pdoNormalizeFolder(folder) {
+    const f = folder && typeof folder === 'object' ? folder : {};
+    return {
+      name: String(f.name || 'Folder'),
+      icon: String(f.icon || PDO_DEFAULT_ICON),
+      defaultCollapsed: !!f.defaultCollapsed,
+    };
+  }
+  
+  function pdoNormalizePresetConfig(cfg) {
+    const c = cfg && typeof cfg === 'object' ? cfg : {};
+    const folders = {};
+    Object.entries(c.folders || {}).forEach(([id, folder]) => {
+      if (/^f-[a-z0-9]{5}$/i.test(id)) folders[id] = pdoNormalizeFolder(folder);
+    });
+  
+    const folderOrder = Array.isArray(c.folderOrder) ? c.folderOrder.filter(id => folders[id]) : [];
+    Object.keys(folders).forEach(id => {
+      if (!folderOrder.includes(id)) folderOrder.push(id);
+    });
+  
+    const assignments = {};
+    Object.entries(c.assignments || {}).forEach(([promptId, folderId]) => {
+      if (folders[folderId]) assignments[String(promptId)] = folderId;
+    });
+  
+    return { folderOrder, folders, assignments };
+  }
+  
+  function pdoNormalizeTemplate(tpl) {
+    const t = tpl && typeof tpl === 'object' ? tpl : {};
+    const cfg = pdoNormalizePresetConfig(t);
+    const assignmentsByName = {};
+    Object.entries(t.assignmentsByName || {}).forEach(([name, folderId]) => {
+      if (cfg.folders[folderId]) assignmentsByName[String(name)] = folderId;
+    });
+    return { folderOrder: cfg.folderOrder, folders: cfg.folders, assignmentsByName };
+  }
+  
+  function pdoNormalizeDb(raw) {
+    const db = raw && typeof raw === 'object' ? raw : pdoDefaultDb();
+    const out = pdoDefaultDb();
+    Object.entries(db.perPreset || {}).forEach(([presetName, cfg]) => {
+      out.perPreset[String(presetName)] = pdoNormalizePresetConfig(cfg);
+    });
+    Object.entries(db.templates || {}).forEach(([name, tpl]) => {
+      out.templates[String(name)] = pdoNormalizeTemplate(tpl);
+    });
+    return out;
+  }
+  
+  function pdoDbLoad() {
+    try { return pdoNormalizeDb(JSON.parse(localStorage.getItem(PDO_STORE_KEY) || 'null')); }
+    catch { return pdoDefaultDb(); }
+  }
+  
+  function pdoAfterStoreWrite(opts = {}) {
+    const repaint = opts.repaint !== false;
+    const panel   = opts.panel !== false;
+    if (repaint && typeof schedulePdoRepaint === 'function') schedulePdoRepaint();
+    if (panel && typeof renderPdoPanel === 'function' && pdoPanelOpen) renderPdoPanel();
+  }
+  
+  function pdoDbSave(db, opts = {}) {
+    localStorage.setItem(PDO_STORE_KEY, JSON.stringify(pdoNormalizeDb(db)));
+    pdoAfterStoreWrite(opts);
+  }
+  
+  function pdoGetPresetConfig(presetName) {
+    const db = pdoDbLoad();
+    return pdoNormalizePresetConfig(db.perPreset[presetName]);
+  }
+  
+  function pdoEnsurePresetConfig(db, presetName) {
+    db.perPreset[presetName] = pdoNormalizePresetConfig(db.perPreset[presetName]);
+    return db.perPreset[presetName];
+  }
+  
+  function pdoWithPresetConfig(presetName, updater, opts = {}) {
+    const db = pdoDbLoad();
+    const cfg = pdoEnsurePresetConfig(db, presetName);
+    updater(cfg, db);
+    pdoDbSave(db, opts);
+  }
+  
+  function pdoCollapseLoad() {
+    try {
+      const c = JSON.parse(localStorage.getItem(PDO_COLLAPSE_KEY) || '{}');
+      return c && typeof c === 'object' ? c : {};
+    } catch { return {}; }
+  }
+  
+  function pdoCollapseSave(collapse, opts = {}) {
+    localStorage.setItem(PDO_COLLAPSE_KEY, JSON.stringify(collapse || {}));
+    pdoAfterStoreWrite(opts);
+  }
+  
+  function pdoCollapseKey(presetName, folderId) {
+    return String(presetName) + '::' + String(folderId);
+  }
+  
+  function pdoIsCollapsed(presetName, folderId, folder) {
+    const collapse = pdoCollapseLoad();
+    const key = pdoCollapseKey(presetName, folderId);
+    return Object.prototype.hasOwnProperty.call(collapse, key)
+      ? !!collapse[key]
+      : !!folder?.defaultCollapsed;
+  }
+  
+  function pdoSetCollapsed(presetName, folderId, collapsed, opts = {}) {
+    const collapse = pdoCollapseLoad();
+    collapse[pdoCollapseKey(presetName, folderId)] = !!collapsed;
+    pdoCollapseSave(collapse, opts);
+  }
+  
+  function pdoClearCollapseForPreset(presetName, folderIds = null) {
+    const collapse = pdoCollapseLoad();
+    const prefix = String(presetName) + '::';
+    Object.keys(collapse).forEach(key => {
+      if (!key.startsWith(prefix)) return;
+      if (!folderIds || folderIds.includes(key.slice(prefix.length))) delete collapse[key];
+    });
+    pdoCollapseSave(collapse, { repaint: false, panel: false });
+  }
+  
+  function pdoPosLoad() {
+    try { return JSON.parse(localStorage.getItem(PDO_POS_KEY) || 'null'); }
+    catch { return null; }
+  }
+  
+  function pdoPosSave(top, left) {
+    localStorage.setItem(PDO_POS_KEY, JSON.stringify({ top, left }));
+  }
+  
+  function pdoCreateFolder(presetName, name) {
+    const clean = String(name || '').trim();
+    if (!clean) return null;
+    let created = null;
+    pdoWithPresetConfig(presetName, cfg => {
+      if (pdoFindFolderIdByName(cfg, clean)) return;
+      const id = pdoNewFolderId(cfg);
+      cfg.folders[id] = { name: clean, icon: PDO_DEFAULT_ICON, defaultCollapsed: false };
+      cfg.folderOrder.push(id);
+      created = id;
+    });
+    return created;
+  }
+  
+  function pdoRenameFolder(presetName, folderId, name) {
+    const clean = String(name || '').trim();
+    if (!clean) return false;
+    let ok = false;
+    pdoWithPresetConfig(presetName, cfg => {
+      if (!cfg.folders[folderId]) return;
+      const existing = pdoFindFolderIdByName(cfg, clean);
+      if (existing && existing !== folderId) return;
+      cfg.folders[folderId].name = clean;
+      ok = true;
+    });
+    return ok;
+  }
+  
+  function pdoSetFolderIcon(presetName, folderId, icon) {
+    const clean = Array.from(String(icon || '').trim())[0] || PDO_DEFAULT_ICON;
+    pdoWithPresetConfig(presetName, cfg => {
+      if (cfg.folders[folderId]) cfg.folders[folderId].icon = clean;
+    });
+  }
+  
+  function pdoDeleteFolder(presetName, folderId) {
+    pdoWithPresetConfig(presetName, cfg => {
+      if (!cfg.folders[folderId]) return;
+      delete cfg.folders[folderId];
+      cfg.folderOrder = cfg.folderOrder.filter(id => id !== folderId);
+      Object.keys(cfg.assignments).forEach(promptId => {
+        if (cfg.assignments[promptId] === folderId) delete cfg.assignments[promptId];
+      });
+    });
+    pdoClearCollapseForPreset(presetName, [folderId]);
+  }
+  
+  function pdoSetFolderOrder(presetName, order) {
+    pdoWithPresetConfig(presetName, cfg => {
+      const seen = new Set();
+      cfg.folderOrder = (order || []).filter(id => {
+        if (!cfg.folders[id] || seen.has(id)) return false;
+        seen.add(id);
+        return true;
+      });
+      Object.keys(cfg.folders).forEach(id => {
+        if (!seen.has(id)) cfg.folderOrder.push(id);
+      });
+    });
+  }
+  
+  function pdoAssignPrompts(presetName, folderId, promptIds) {
+    pdoWithPresetConfig(presetName, cfg => {
+      if (!cfg.folders[folderId]) return;
+      (promptIds || []).forEach(promptId => {
+        if (promptId) cfg.assignments[String(promptId)] = folderId;
+      });
+    });
+  }
+  
+  function pdoUnassignPrompt(presetName, promptId) {
+    pdoWithPresetConfig(presetName, cfg => {
+      delete cfg.assignments[String(promptId)];
+    });
+  }
+  
+  function pdoSaveTemplate(name) {
+    const templateName = String(name || '').trim();
+    if (!templateName) return false;
+    const presetName = currentPreset();
+    const cfg = pdoGetPresetConfig(presetName);
+    const prompts = pdoReadPrompts();
+    const assignmentsByName = {};
+    const seenNames = new Set();
+    let duplicate = false;
+  
+    prompts.forEach(prompt => {
+      const promptName = prompt.name || prompt.id;
+      if (seenNames.has(promptName)) duplicate = true;
+      seenNames.add(promptName);
+      const folderId = cfg.assignments[prompt.id];
+      if (folderId && cfg.folders[folderId]) assignmentsByName[promptName] = folderId;
+    });
+  
+    const db = pdoDbLoad();
+    db.templates[templateName] = {
+      folderOrder: cfg.folderOrder.slice(),
+      folders: pdoClone(cfg.folders),
+      assignmentsByName,
+    };
+    pdoDbSave(db, { repaint: false });
+    if (duplicate) pdoNotify('Template saved; duplicate prompt names used the later match');
+    return true;
+  }
+  
+  function pdoApplyTemplate(name) {
+    const templateName = String(name || '').trim();
+    const db = pdoDbLoad();
+    const template = db.templates[templateName];
+    if (!template) return false;
+  
+    const presetName = currentPreset();
+    const prompts = pdoReadPrompts();
+    const nextDb = pdoDbLoad();
+    const tpl = pdoNormalizeTemplate(template);
+  
+    const nextCfg = {
+      folderOrder: tpl.folderOrder.slice(),
+      folders: pdoClone(tpl.folders),
+      assignments: {},
+    };
+    prompts.forEach(prompt => {
+      const folderId = tpl.assignmentsByName[prompt.name];
+      if (folderId && nextCfg.folders[folderId]) nextCfg.assignments[prompt.id] = folderId;
+    });
+    nextDb.perPreset[presetName] = nextCfg;
+    pdoClearCollapseForPreset(presetName);
+  
+    pdoDbSave(nextDb);
+    return true;
+  }
+  
+  function pdoDeleteTemplate(name) {
+    const templateName = String(name || '').trim();
+    const db = pdoDbLoad();
+    if (!db.templates[templateName]) return false;
+    delete db.templates[templateName];
+    pdoDbSave(db, { repaint: false });
+    return true;
+  }
+  
+  function pdoIsHidden() {
+    try { return localStorage.getItem(PDO_HIDDEN_KEY) === '1'; }
+    catch { return false; }
+  }
+  
+  function pdoSetHidden(hidden) {
+    try { localStorage.setItem(PDO_HIDDEN_KEY, hidden ? '1' : '0'); }
+    catch { /* ignore */ }
+    if (typeof schedulePdoRepaint === 'function') schedulePdoRepaint();
+  }
+  
+
+  // ─── divs-helpers.js ─────────────────────────────────────────────
+
+  // Prompt Folders helpers. These read SillyTavern/PSM state but do not write it.
+  
+  const PDO_GLYPHS = {
+    drag: '\u2195',
+    down: '\u25BC',
+    right: '\u25B6',
+    remove: '\u2296',
+    close: '\u00D7',
+    info: '\u24D8',
+    search: String.fromCodePoint(0x1F50D),
+    eye: String.fromCodePoint(0x1F441),
+    eyeOff: String.fromCodePoint(0x1F648),
+  };
+  
+  const PDO_ICON_PALETTE = [
+    0x1F4C1, 0x1F3AD, 0x2699, 0x1F9D9, 0x1F3B2, 0x1F4A1,
+    0x1F4DA, 0x1F5C2, 0x2B50, 0x1F527, 0x1F4DD, 0x1F680,
+  ].map(cp => String.fromCodePoint(cp));
+  
+  function pdoListEl() {
+    return parentDoc.querySelector('#completion_prompt_manager_list');
+  }
+  
+  function pdoPromptId(prompt) {
+    return String(prompt?.identifier ?? prompt?.id ?? '');
+  }
+  
+  function pdoPromptName(prompt, fallback) {
+    return String(prompt?.name ?? prompt?.title ?? fallback ?? pdoPromptId(prompt));
+  }
+  
+  function pdoPromptNameFromRow(row) {
+    const nameEl = row.querySelector('[data-pm-name]');
+    if (nameEl?.getAttribute('data-pm-name')) return nameEl.getAttribute('data-pm-name');
+    const titleEl = row.querySelector('.prompt-manager-inspect-action, [title]');
+    if (titleEl?.getAttribute('title')) return titleEl.getAttribute('title');
+    return (nameEl || row).textContent.replace(/\s+/g, ' ').trim();
+  }
+  
+  function pdoReadPromptSource() {
+    try {
+      const prompts = readPrompts();
+      return Array.isArray(prompts) ? prompts.filter(Boolean) : [];
+    } catch(e) {
+      ERR('pdo readPrompts:', e);
+      return [];
+    }
+  }
+  
+  function pdoReadPrompts() {
+    const source = pdoReadPromptSource();
+    const byId = new Map();
+    source.forEach(prompt => {
+      const ids = [prompt?.identifier, prompt?.id].filter(Boolean).map(String);
+      ids.forEach(id => byId.set(id, prompt));
+    });
+  
+    const list = pdoListEl();
+    const rows = list ? [...list.querySelectorAll(':scope > li[data-pm-identifier]')] : [];
+    const seen = new Set();
+    const out = rows.map(row => {
+      const id = row.getAttribute('data-pm-identifier') || '';
+      const prompt = byId.get(id);
+      seen.add(id);
+      return {
+        id,
+        name: pdoPromptName(prompt, pdoPromptNameFromRow(row)),
+        enabled: prompt?.enabled ?? !row.classList.contains('completion_prompt_manager_prompt_disabled'),
+        marker: !!prompt?.marker || row.classList.contains('completion_prompt_manager_marker'),
+      };
+    }).filter(prompt => prompt.id);
+  
+    source.forEach(prompt => {
+      const id = pdoPromptId(prompt);
+      if (!id || seen.has(id)) return;
+      out.push({
+        id,
+        name: pdoPromptName(prompt, id),
+        enabled: !!prompt.enabled,
+        marker: !!prompt.marker,
+      });
+    });
+  
+    return out;
+  }
+  
+  function pdoPromptMap() {
+    return new Map(pdoReadPrompts().map(prompt => [prompt.id, prompt]));
+  }
+  
+  function pdoNameKey(name) {
+    return String(name || '').trim().toLowerCase();
+  }
+  
+  function pdoFindFolderIdByName(cfg, name) {
+    const key = pdoNameKey(name);
+    return Object.entries(cfg.folders || {}).find(([, folder]) => pdoNameKey(folder.name) === key)?.[0] || null;
+  }
+  
+  function pdoNewFolderId(cfg) {
+    let id;
+    do {
+      id = 'f-' + Math.random().toString(36).slice(2, 7).padEnd(5, '0');
+    } while (cfg.folders?.[id]);
+    return id;
+  }
+  
+  function pdoMemberClass(folderId) {
+    return 'pdo-member-' + folderId;
+  }
+  
+  function pdoCollapsedClass(folderId) {
+    return 'pdo-collapsed-' + folderId;
+  }
+  
+  function pdoFolderCounts(cfg, prompts = pdoReadPrompts()) {
+    const promptIds = new Set(prompts.map(prompt => prompt.id));
+    const counts = {};
+    Object.keys(cfg.folders || {}).forEach(id => { counts[id] = 0; });
+    Object.entries(cfg.assignments || {}).forEach(([promptId, folderId]) => {
+      if (promptIds.has(promptId) && counts[folderId] !== undefined) counts[folderId]++;
+    });
+    return counts;
+  }
+  
+  function pdoPromptsForFolder(cfg, folderId, prompts = pdoReadPrompts()) {
+    return prompts.filter(prompt => cfg.assignments[prompt.id] === folderId);
+  }
+  
+  function pdoUnassignedPrompts(cfg, prompts = pdoReadPrompts()) {
+    return prompts.filter(prompt => !cfg.assignments[prompt.id] || !cfg.folders[cfg.assignments[prompt.id]]);
+  }
+  
+  function pdoDefaultPanelPos() {
+    const panelEl = parentDoc.querySelector('#pdo-panel');
+    const pw = panelEl ? panelEl.offsetWidth : 320;
+    const ph = panelEl ? panelEl.offsetHeight : 420;
+    return {
+      top: Math.max(10, Math.round((window.parent.innerHeight - ph) / 2)),
+      left: Math.max(10, Math.round((window.parent.innerWidth - pw) / 2)),
+    };
+  }
+  
+  function pdoClampPanelToViewport() {
+    const panelEl = parentDoc.querySelector('#pdo-panel');
+    if (!panelEl) return;
+    const margin = 10;
+    const pw = panelEl.offsetWidth;
+    const ph = panelEl.offsetHeight;
+    const top = Math.min(Math.max(margin, parseFloat(panelEl.style.top) || 0), Math.max(margin, window.parent.innerHeight - ph - margin));
+    const left = Math.min(Math.max(margin, parseFloat(panelEl.style.left) || 0), Math.max(margin, window.parent.innerWidth - pw - margin));
+    panelEl.style.setProperty('top', top + 'px', 'important');
+    panelEl.style.setProperty('left', left + 'px', 'important');
+  }
+  
+  function pdoNotify(msg) {
+    if (typeof pdoShowToast === 'function' && parentDoc.querySelector('#pdo-panel')) {
+      pdoShowToast(msg);
+    } else if (window.parent.toastr?.info) {
+      window.parent.toastr.info(msg);
+    } else {
+      LOG('Prompt Folders:', msg);
+    }
+  }
+  
+  function pdoStopBubble(el) {
+    if (!el || el.dataset.pdoIsolate === '1') return;
+    el.dataset.pdoIsolate = '1';
+    ['mousedown', 'pointerdown', 'click', 'touchstart', 'focusin', 'keydown'].forEach(type => {
+      el.addEventListener(type, ev => { ev.stopPropagation(); }, false);
+    });
+  }
+  
+  function pdoButtonHtml(cls, attrs, label, title = '') {
+    const titleAttr = title ? ` title="${esc(title)}"` : '';
+    return `<button type="button" class="${cls}"${titleAttr} ${attrs}>${label}</button>`;
+  }
+  
+
+  // ─── divs-styles.js ──────────────────────────────────────────────
+
+  // Prompt Folders styles, sharing PSM scale and SillyTavern theme variables.
+  
+  function injectDivStyles() {
+    if (parent$('#' + PDO_STYLE_ID, parentDoc).length > 0) return;
+  
+    const b = PSM_SCALE.base;
+    const px = k => `${Math.round(b * PSM_SCALE[k])}px`;
+    const sp = n => `${Math.round(b * PSM_SCALE.pad * n)}px`;
+    const fluid = k => {
+      const hi = Math.round(b * PSM_SCALE[k]);
+      const lo = Math.max(14, Math.round(hi * 0.875));
+      if (lo === hi) return `${hi}px`;
+      const slope = ((hi - lo) / 649 * 100).toFixed(2);
+      const offset = (lo - parseFloat(slope) / 100 * 375).toFixed(2);
+      return `clamp(${lo}px, ${slope}vw + ${offset}px, ${hi}px)`;
+    };
+  
+    const bg = 'oklch(from var(--SmartThemeBlurTintColor) l c h / 1)';
+    const border = 'var(--SmartThemeBorderColor)';
+    const muted = 'var(--SmartThemeBodyColor)';
+    const bodyFont = window.parent.getComputedStyle(parentDoc.body).fontFamily || 'var(--mainFontFamily)';
+  
+    const css = `
+      #pdo-config-btn {
+        min-width: 32px !important;
+      }
+  
+      #pdo-panel {
+        position: fixed !important; z-index: 99999 !important;
+        width: min(330px, calc(100vw - 24px)) !important;
+        max-height: 82vh !important; overflow: hidden !important;
+        display: none !important; flex-direction: column !important;
+        background: ${bg} !important; border: 1px solid ${border} !important;
+        border-radius: 12px !important; padding: 0 !important;
+        font-size: ${fluid('body')} !important; color: ${muted} !important;
+        font-family: ${bodyFont} !important; box-sizing: border-box !important;
+      }
+      #pdo-panel.open { display: flex !important; }
+      #pdo-panel-inner {
+        flex: 1 1 auto !important; min-height: 0 !important;
+        display: flex !important; flex-direction: column !important;
+        overflow: hidden !important;
+      }
+      #pdo-panel button, #pdo-panel input, #pdo-panel select {
+        font-family: inherit !important; color: ${muted};
+      }
+      #pdo-panel input, #pdo-panel select, .pdo-row-btn, .pdo-add-folder button, .pdo-popup-actions button,
+      .pdo-template-row button {
+        border: 1px solid ${border}; background: ${bg}; color: ${muted};
+      }
+  
+      .pdo-header {
+        flex: 0 0 auto;
+        display: flex; align-items: center; gap: ${sp(0.75)};
+        padding: ${sp(1.25)} ${sp(1.5)}; border-bottom: 1px solid ${border};
+        background: ${bg}; cursor: move;
+      }
+      .pdo-header-title {
+        flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+        font-size: ${px('label')}; font-weight: 600; text-transform: uppercase; letter-spacing: .07em;
+      }
+      .pdo-ghost {
+        background: none !important; border: none !important; padding: ${sp(0.25)} ${sp(0.625)};
+        border-radius: 4px; line-height: 1; cursor: pointer;
+      }
+      .pdo-header-btn { font-size: ${px('iconSm')} !important; flex: 0 0 auto; }
+      .pdo-body {
+        flex: 1 1 auto; min-height: 0; overflow-y: auto;
+        padding: ${sp(1.25)} ${sp(1.5)}; user-select: none; -webkit-user-select: none;
+      }
+      #pdo-panel input, #pdo-panel select { user-select: text !important; -webkit-user-select: text !important; }
+  
+      #pdo-folder-list { display: flex; flex-direction: column; gap: ${sp(0.375)}; }
+      .pdo-folder-block { display: block; }
+      .pdo-folder-row {
+        display: grid; grid-template-columns: 24px 28px 30px minmax(0, 1fr) auto 28px 34px;
+        align-items: center; gap: ${sp(0.375)}; min-height: 36px;
+        padding: ${sp(0.25)} 0; box-sizing: border-box;
+      }
+      .pdo-drag-handle {
+        cursor: grab; color: ${border}; text-align: center; touch-action: none;
+        font-size: ${px('body')}; line-height: 1;
+      }
+      .pdo-drag-handle:active { cursor: grabbing; }
+      .pdo-row-btn {
+        min-width: 28px; height: 28px; padding: 0; border-radius: 5px; cursor: pointer;
+        display: inline-flex; align-items: center; justify-content: center; line-height: 1;
+        font-size: ${px('caption')} !important;
+      }
+      .pdo-icon-btn { font-size: ${px('body')} !important; }
+      .pdo-folder-name {
+        min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+        font-size: ${px('label')}; font-weight: 600; text-transform: uppercase; letter-spacing: .06em;
+        cursor: text;
+      }
+      .pdo-rename-input {
+        width: 100%; min-width: 0; box-sizing: border-box; border-radius: 5px; outline: none;
+        padding: ${sp(0.375)} ${sp(0.625)}; font-size: ${px('label')} !important;
+        font-weight: 600; text-transform: uppercase; letter-spacing: .06em;
+      }
+      .pdo-count {
+        background: none !important; border: none !important; white-space: nowrap; cursor: pointer;
+        padding: ${sp(0.25)} ${sp(0.375)}; font-size: ${px('caption')} !important;
+      }
+      .pdo-folder-del.confirming {
+        width: auto; min-width: 58px; border-color: #E24B4A !important; color: #E24B4A !important;
+        padding: 0 ${sp(0.5)};
+      }
+      .pdo-member-list {
+        margin: 0 0 ${sp(0.375)} 82px; padding: ${sp(0.25)} 0 ${sp(0.5)};
+        border-left: 1px solid ${border};
+      }
+      .pdo-member-line {
+        display: grid; grid-template-columns: minmax(0, 1fr) 28px; align-items: center; gap: ${sp(0.5)};
+        padding: ${sp(0.25)} 0 ${sp(0.25)} ${sp(0.75)};
+        font-size: ${px('caption')};
+      }
+      .pdo-member-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  
+      .pdo-add-folder {
+        display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: ${sp(0.625)};
+        margin-top: ${sp(1.25)};
+      }
+      .pdo-add-folder input {
+        min-width: 0; box-sizing: border-box; border-radius: 6px; outline: none;
+        padding: ${sp(0.625)} ${sp(1)}; font-size: ${fluid('body')} !important;
+      }
+      .pdo-add-folder button {
+        border-radius: 6px; padding: ${sp(0.625)} ${sp(1.25)}; cursor: pointer;
+        font-size: ${fluid('body')} !important; white-space: nowrap;
+      }
+  
+      .pdo-empty {
+        text-align: center; font-size: ${px('caption')}; padding: ${sp(1.25)};
+        border: 1px dashed ${border}; border-radius: 6px;
+      }
+      .pdo-toast {
+        position: absolute !important; bottom: ${sp(0.75)} !important; left: 50% !important;
+        transform: translateX(-50%) !important; background: ${bg} !important; border: 1px solid ${border} !important;
+        border-radius: 7px; padding: ${sp(0.75)} ${sp(1.25)}; font-size: ${px('caption')};
+        color: ${muted} !important; opacity: 0; pointer-events: none; transition: opacity .2s;
+        z-index: 5 !important; max-width: calc(100% - ${sp(2)}) !important; text-align: center !important;
+        box-shadow: 0 2px 10px oklch(0 0 0 / 0.2);
+      }
+      .pdo-toast.show { opacity: 1 !important; }
+  
+      .pdo-popup {
+        position: fixed; z-index: 100000; width: min(320px, calc(100vw - 24px));
+        max-height: min(520px, calc(100vh - 24px)); overflow: hidden; display: flex; flex-direction: column;
+        background: ${bg}; border: 1px solid ${border}; border-radius: 10px; color: ${muted};
+        box-shadow: 0 12px 30px oklch(0 0 0 / 0.35); font-family: ${bodyFont};
+      }
+      .pdo-popup > .pdo-popup-header {
+        display: flex; align-items: center; gap: ${sp(0.75)}; padding: ${sp(1)} ${sp(1.25)};
+        border-bottom: 1px solid ${border}; font-size: ${px('label')}; font-weight: 600; text-transform: uppercase; letter-spacing: .06em;
+        cursor: move; touch-action: none; user-select: none; -webkit-user-select: none; flex: 0 0 auto;
+      }
+      .pdo-popup-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .pdo-popup-body {
+        padding: ${sp(1)} ${sp(1.25)}; overflow: hidden; min-height: 0;
+        display: flex; flex: 1 1 auto; flex-direction: column;
+      }
+      .pdo-popup-filter {
+        flex: 0 0 auto;
+        width: 100%; box-sizing: border-box; border-radius: 6px; outline: none;
+        padding: ${sp(0.625)} ${sp(1)}; margin-bottom: ${sp(0.75)}; font-size: ${fluid('body')} !important;
+      }
+      #pdo-mass-list {
+        min-height: 74px; overflow-y: auto; padding-right: ${sp(0.25)};
+        flex: 1 1 auto; -webkit-overflow-scrolling: touch;
+      }
+      .pdo-prompt-choice {
+        display: grid; grid-template-columns: 22px minmax(0, 1fr) auto; align-items: center; gap: ${sp(0.5)};
+        padding: ${sp(0.375)} 0; font-size: ${px('caption')};
+      }
+      .pdo-prompt-choice-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .pdo-marker {
+        border: 1px solid ${border}; border-radius: 4px; padding: 1px ${sp(0.375)};
+        font-size: ${px('label')}; opacity: .85;
+      }
+      .pdo-popup-actions, .pdo-template-row {
+        display: flex; gap: ${sp(0.625)}; margin-top: ${sp(0.875)};
+      }
+      .pdo-popup-actions {
+        flex: 0 0 auto; padding-top: ${sp(0.75)}; border-top: 1px solid ${border};
+      }
+      .pdo-popup-actions button, .pdo-template-row button {
+        flex: 1; border-radius: 6px; padding: ${sp(0.5)} ${sp(0.75)}; cursor: pointer;
+        font-size: ${px('caption')} !important; white-space: nowrap;
+      }
+  
+      .pdo-icon-popover {
+        display: grid; grid-template-columns: repeat(6, 1fr); gap: ${sp(0.375)};
+        margin: ${sp(0.25)} 0 ${sp(0.75)} 82px; padding: ${sp(0.625)};
+        border: 1px solid ${border}; border-radius: 8px;
+      }
+      .pdo-icon-popover button { font-size: ${px('body')} !important; }
+      .pdo-icon-custom { grid-column: 1 / -1; width: 100%; box-sizing: border-box; }
+  
+      .pdo-template-panel {
+        position: fixed; z-index: 100000; width: min(330px, calc(100vw - 24px));
+        background: ${bg}; border: 1px solid ${border}; border-radius: 10px; color: ${muted};
+        box-shadow: 0 12px 30px oklch(0 0 0 / 0.35); font-family: ${bodyFont};
+      }
+      .pdo-template-body { padding: ${sp(1)} ${sp(1.25)}; }
+      .pdo-template-label {
+        display: block; margin: ${sp(0.5)} 0; font-size: ${px('label')};
+        text-transform: uppercase; letter-spacing: .06em;
+      }
+      .pdo-template-row input, .pdo-template-row select {
+        flex: 1; min-width: 0; box-sizing: border-box; border-radius: 6px; outline: none;
+        padding: ${sp(0.5)} ${sp(0.75)}; font-size: ${px('caption')} !important;
+      }
+      .pdo-confirm-row {
+        display: flex; align-items: center; gap: ${sp(0.625)}; margin: ${sp(0.5)} 0;
+        padding: ${sp(0.625)}; border: 1px solid #E24B4A; border-radius: 6px; color: #E24B4A;
+        font-size: ${px('caption')};
+      }
+      .pdo-confirm-row span { flex: 1; min-width: 0; }
+  
+      .pdo-sortable-ghost { opacity: 0.35; }
+      .pdo-sortable-chosen { background: oklch(from var(--SmartThemeBorderColor, #ccc) l c h / 0.1); }
+  
+      .pdo-hidden-notice {
+        text-align: center; font-size: ${px('caption')}; padding: ${sp(0.75)} ${sp(1)};
+        margin-bottom: ${sp(0.75)};
+        border: 1px dashed ${border}; border-radius: 6px;
+        opacity: 0.85;
+      }
+  
+      #completion_prompt_manager_list > .pdo-folder-header {
+        display: flex !important; align-items: center !important; gap: 8px !important;
+        grid-template-columns: none !important; list-style: none;
+        min-height: 28px; box-sizing: border-box; padding: 4px 7.5px !important;
+        border: 1px solid ${border} !important; border-radius: 4px;
+        margin: 4px 0 7.5px !important;
+        background: oklch(from var(--SmartThemeBorderColor, #ccc) l c h / 0.08);
+        user-select: none; -webkit-user-select: none; cursor: pointer;
+        transition: background-color .12s ease;
+      }
+      #completion_prompt_manager_list > .pdo-folder-header:hover,
+      #completion_prompt_manager_list > .pdo-folder-header:focus-visible {
+        background: oklch(from var(--SmartThemeBorderColor, #ccc) l c h / 0.18);
+        outline: none;
+      }
+      #completion_prompt_manager_list > .pdo-folder-header .pdo-native-chevron {
+        display: inline-flex; align-items: center; justify-content: center;
+        width: 18px; flex: 0 0 auto;
+        font-size: ${px('caption')}; line-height: 1;
+      }
+      #completion_prompt_manager_list > .pdo-folder-header .pdo-native-icon {
+        flex: 0 0 auto; font-size: ${px('body')}; line-height: 1;
+      }
+      #completion_prompt_manager_list > .pdo-folder-header .pdo-native-title {
+        flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+        font-weight: 600; font-size: ${px('caption')};
+      }
+      #completion_prompt_manager_list > .pdo-folder-header .pdo-native-count {
+        flex: 0 0 auto; opacity: 0.75; font-size: ${px('caption')};
+      }
+      #completion_prompt_manager_list > li[class*="pdo-member-"] {
+        transition: opacity .08s ease;
+      }
+  
+      @media (max-width: 480px) {
+        .pdo-folder-row { grid-template-columns: 22px 26px 28px minmax(0, 1fr) auto 27px 32px; }
+        .pdo-member-list, .pdo-icon-popover { margin-left: 70px; }
+      }
+    `;
+  
+    parent$(parentDoc.head).append(`<style id="${PDO_STYLE_ID}">${css}</style>`);
+    parent$(parentDoc.head).append(`<style id="${PDO_COLLAPSE_STYLE_ID}"></style>`);
+  }
+  
+  function pdoUpdateCollapseRules(cfg) {
+    const styleEl = parentDoc.getElementById(PDO_COLLAPSE_STYLE_ID);
+    if (!styleEl) return;
+    styleEl.textContent = Object.keys(cfg.folders || {}).map(folderId => {
+      const c = pdoCollapsedClass(folderId);
+      const m = pdoMemberClass(folderId);
+      return `#completion_prompt_manager_list.${c} > .${m}{display:none!important;}`;
+    }).join('\n');
+  }
+  
+
+  // ─── divs-decorator.js ───────────────────────────────────────────
+
+  // Decorates SillyTavern's native prompt list without moving native prompt rows.
+  
+  let pdoRepaintQueued = false;
+  let pdoApplyingDecorations = false;
+  
+  function schedulePdoRepaint() {
+    if (pdoRepaintQueued) return;
+    pdoRepaintQueued = true;
+    const raf = window.parent.requestAnimationFrame || window.requestAnimationFrame;
+    raf(() => {
+      pdoRepaintQueued = false;
+      applyDecorations();
+    });
+  }
+  
+  function pdoIgnorableMutation(mutation) {
+    // Treat as ignorable (don't repaint) when:
+    //  (1) it originates inside one of our own header rows (chevron.textContent etc.)
+    //  (2) it sits inside an individual prompt <li> — ST's own per-row updates
+    //      (token counts, enabled toggles, edit states). The list-structure mutations
+    //      that we DO care about (full re-render, prompt added/removed) target the
+    //      list/container itself, not a prompt-row interior.
+    //  (3) addedNodes are all pdo-* nodes we inserted.
+    const targetEl = mutation.target?.nodeType === 1
+      ? mutation.target
+      : mutation.target?.parentElement;
+    if (targetEl?.closest?.('.pdo-folder-header')) return true;
+    if (targetEl && targetEl.id !== 'completion_prompt_manager_list'
+        && targetEl.id !== 'completion_prompt_manager'
+        && targetEl.closest?.('li[data-pm-identifier]')) {
+      return true;
+    }
+    const added = [...mutation.addedNodes || []].filter(node => node.nodeType === 1);
+    if (!added.length) return false;
+    return added.every(node => {
+      const el = /** @type {Element} */ (node);
+      return [...el.classList || []].some(cls => cls.startsWith('pdo-'))
+        || !!el.querySelector?.('[class*="pdo-"]');
+    });
+  }
+  
+  function pdoCleanPromptRow(row) {
+    [...row.classList].forEach(cls => {
+      if (cls.startsWith('pdo-member-')) row.classList.remove(cls);
+    });
+    row.removeAttribute('data-pdo-folder');
+  }
+  
+  function pdoCleanListClasses(list) {
+    [...list.classList].forEach(cls => {
+      if (cls.startsWith('pdo-collapsed-')) list.classList.remove(cls);
+    });
+  }
+  
+  function pdoNativeHeader(folderId, folder, count, collapsed) {
+    const li = parentDoc.createElement('li');
+    li.className = 'pdo-folder-header pdo-folder-header-' + folderId;
+    li.dataset.pdoFolder = folderId;
+    li.setAttribute('role', 'button');
+    li.setAttribute('tabindex', '0');
+    li.innerHTML = `
+      <span class="pdo-native-chevron" aria-hidden="true">${collapsed ? PDO_GLYPHS.right : PDO_GLYPHS.down}</span>
+      <span class="pdo-native-icon">${esc(folder.icon || PDO_DEFAULT_ICON)}</span>
+      <span class="pdo-native-title">${esc(folder.name)}</span>
+      <span class="pdo-native-count">(${count})</span>
+    `;
+    const toggle = ev => {
+      ev.preventDefault();
+      ev.stopPropagation();
+      const presetName = currentPreset();
+      const next = !pdoIsCollapsed(presetName, folderId, folder);
+      pdoSetCollapsed(presetName, folderId, next, { panel: true, repaint: false });
+      const list = pdoListEl();
+      if (list) list.classList.toggle(pdoCollapsedClass(folderId), next);
+      const liveChevron = list?.querySelector('.pdo-folder-header-' + folderId + ' .pdo-native-chevron');
+      if (liveChevron) liveChevron.textContent = next ? PDO_GLYPHS.right : PDO_GLYPHS.down;
+    };
+    li.addEventListener('click', toggle);
+    li.addEventListener('keydown', ev => {
+      if (ev.key === 'Enter' || ev.key === ' ') toggle(ev);
+    });
+    // Prevent jQuery UI Sortable from capturing pointer events on folder headers
+    ['mousedown', 'pointerdown', 'touchstart'].forEach(type => {
+      li.addEventListener(type, ev => { ev.stopPropagation(); }, false);
+    });
+    return li;
+  }
+  
+  function pdoManageSortable() {
+    try {
+      const $list = parent$('#completion_prompt_manager_list', parentDoc);
+      if (!$list.length || !$list.sortable('instance')) return;
+      if (pdoIsHidden()) {
+        $list.sortable('enable');
+      } else {
+        $list.sortable('disable');
+      }
+    } catch (_) { /* sortable not initialized yet */ }
+  }
+  
+  function applyDecorations() {
+    const list = pdoListEl();
+    if (!list) return;
+  
+    if (pdoIsHidden()) {
+      list.querySelectorAll(':scope > .pdo-folder-header').forEach(h => h.remove());
+      pdoCleanListClasses(list);
+      [...list.querySelectorAll(':scope > li[data-pm-identifier]')].forEach(pdoCleanPromptRow);
+      pdoManageSortable();
+      return;
+    }
+  
+    const presetName = currentPreset();
+    const cfg = pdoGetPresetConfig(presetName);
+    const rows = [...list.querySelectorAll(':scope > li[data-pm-identifier]')];
+    const rowIds = new Set(rows.map(row => row.getAttribute('data-pm-identifier')).filter(Boolean));
+    const prompts = pdoReadPrompts().filter(prompt => rowIds.has(prompt.id));
+    const counts = pdoFolderCounts(cfg, prompts);
+    const inserted = new Set();
+  
+    pdoUpdateCollapseRules(cfg);
+  
+    pdoApplyingDecorations = true;
+    try {
+      list.querySelectorAll(':scope > .pdo-folder-header').forEach(header => header.remove());
+      pdoCleanListClasses(list);
+      rows.forEach(pdoCleanPromptRow);
+  
+      cfg.folderOrder.forEach(folderId => {
+        const folder = cfg.folders[folderId];
+        if (!folder) return;
+        const collapsed = pdoIsCollapsed(presetName, folderId, folder);
+        list.classList.toggle(pdoCollapsedClass(folderId), collapsed);
+      });
+  
+      rows.forEach(row => {
+        const promptId = row.getAttribute('data-pm-identifier');
+        const folderId = cfg.assignments[promptId];
+        const folder = cfg.folders[folderId];
+        if (!folder) return;
+  
+        row.classList.add(pdoMemberClass(folderId));
+        row.dataset.pdoFolder = folderId;
+  
+        if (!inserted.has(folderId)) {
+          const header = pdoNativeHeader(
+            folderId,
+            folder,
+            counts[folderId] || 0,
+            pdoIsCollapsed(presetName, folderId, folder)
+          );
+          list.insertBefore(header, row);
+          inserted.add(folderId);
+        }
+      });
+  
+      cfg.folderOrder.forEach(folderId => {
+        if (inserted.has(folderId)) return;
+        const folder = cfg.folders[folderId];
+        if (!folder) return;
+        list.appendChild(pdoNativeHeader(
+          folderId,
+          folder,
+          counts[folderId] || 0,
+          pdoIsCollapsed(presetName, folderId, folder)
+        ));
+        inserted.add(folderId);
+      });
+      pdoManageSortable();
+    } finally {
+      pdoApplyingDecorations = false;
+    }
+  }
+  
+  function initPdoDecorator() {
+    if (parentDoc._pdoObserver) {
+      schedulePdoRepaint();
+      return;
+    }
+  
+    const root = parentDoc.querySelector('#completion_prompt_manager') || parentDoc.body;
+    const observer = new window.parent.MutationObserver(mutations => {
+      if (pdoApplyingDecorations) return;
+      if (mutations.length && mutations.every(pdoIgnorableMutation)) return;
+      schedulePdoRepaint();
+    });
+    observer.observe(root, { childList: true, subtree: true });
+    parentDoc._pdoObserver = observer;
+    schedulePdoRepaint();
+  }
+  
+
+  // ─── divs-panel.js ───────────────────────────────────────────────
+
+  // Prompt Folders panel, popovers, and inline interactions.
+  
+  let pdoPanelOpen = false;
+  let pdoToastTimer = null;
+  const pdoExpandedPanelFolders = new Set();
+  const pdoDeletingFolders = new Map();
+  let pdoRenamingFolder = null;
+  let pdoIconPickerFolder = null;
+  let pdoMassFolder = null;
+  let pdoMassFilter = '';
+  let pdoMassChecked = new Set();
+  let pdoMassPopupPos = null;
+  let pdoTemplatesOpen = false;
+  let pdoTemplateConfirm = null;
+  let pdoTemplateSaveName = '';
+  let pdoTemplateApplyName = '';
+  let pdoTemplateDeleteName = '';
+  
+  function pdoShowToast(msg) {
+    const toast = parentDoc.querySelector('#pdo-panel .pdo-toast');
+    if (!toast) return;
+    toast.textContent = msg;
+    toast.classList.add('show');
+    clearTimeout(pdoToastTimer);
+    pdoToastTimer = setTimeout(() => toast.classList.remove('show'), 2200);
+  }
+  
+  function ensurePdoPanel() {
+    let panel = parentDoc.querySelector('#pdo-panel');
+    if (panel) return panel;
+    panel = parentDoc.createElement('div');
+    panel.id = 'pdo-panel';
+    panel.innerHTML = '<div id="pdo-panel-inner"></div><div class="pdo-toast" aria-live="polite" role="status"></div>';
+    parentDoc.body.appendChild(panel);
+    pdoStopBubble(panel);
+    bindPdoPanelDrag();
+    return panel;
+  }
+  
+  function pdoOpenPanel() {
+    pdoPanelOpen = true;
+    ensurePdoPanel().classList.add('open');
+    renderPdoPanel();
+    window.parent.requestAnimationFrame(() => {
+      const panelEl = parentDoc.querySelector('#pdo-panel');
+      const saved = pdoPosLoad();
+      const pos = saved || pdoDefaultPanelPos();
+      panelEl.style.setProperty('top', pos.top + 'px', 'important');
+      panelEl.style.setProperty('left', pos.left + 'px', 'important');
+      pdoClampPanelToViewport();
+    });
+  }
+  
+  function pdoClosePanel() {
+    pdoPanelOpen = false;
+    pdoRenamingFolder = null;
+    pdoIconPickerFolder = null;
+    pdoMassFolder = null;
+    pdoMassPopupPos = null;
+    pdoTemplatesOpen = false;
+    parentDoc.querySelector('#pdo-panel')?.classList.remove('open');
+    parent$('.pdo-popup, .pdo-template-panel', parentDoc).remove();
+  }
+  
+  function pdoFolderRowHtml(presetName, cfg, folderId, prompts, counts) {
+    const folder = cfg.folders[folderId];
+    if (!folder) return '';
+    const expanded = pdoExpandedPanelFolders.has(folderId);
+    const renaming = pdoRenamingFolder === folderId;
+    const deleting = pdoDeletingFolders.has(folderId);
+    const members = pdoPromptsForFolder(cfg, folderId, prompts);
+    const count = counts[folderId] || 0;
+  
+    const memberHtml = expanded ? `<div class="pdo-member-list" data-folder-members="${esc(folderId)}">${
+      members.length ? members.map(prompt => `
+        <div class="pdo-member-line">
+          <span class="pdo-member-name">${esc(prompt.name)}</span>
+          ${pdoButtonHtml('pdo-row-btn pdo-unassign', `data-pdo-unassign="${esc(prompt.id)}"`, PDO_GLYPHS.remove, 'Remove from folder')}
+        </div>
+      `).join('') : '<div class="pdo-member-line"><span class="pdo-member-name">No assigned prompts</span><span></span></div>'
+    }</div>` : '';
+  
+    const iconPicker = pdoIconPickerFolder === folderId ? `
+      <div class="pdo-icon-popover" data-icon-popover="${esc(folderId)}">
+        ${PDO_ICON_PALETTE.map(icon => pdoButtonHtml('pdo-row-btn pdo-icon-choice', `data-pdo-icon-choice="${esc(icon)}"`, esc(icon), 'Use icon')).join('')}
+        <input class="pdo-icon-custom" data-pdo-icon-custom="${esc(folderId)}" maxlength="8" placeholder="Custom icon" />
+      </div>` : '';
+  
+    return `<div class="pdo-folder-block" data-folder-id="${esc(folderId)}">
+      <div class="pdo-folder-row">
+        <span class="pdo-drag-handle" title="Drag to reorder">${PDO_GLYPHS.drag}</span>
+        ${pdoButtonHtml('pdo-row-btn pdo-collapse-btn', `data-pdo-panel-expand="${esc(folderId)}"`, expanded ? PDO_GLYPHS.down : PDO_GLYPHS.right, expanded ? 'Hide folder prompts' : 'Show folder prompts')}
+        ${pdoButtonHtml('pdo-row-btn pdo-icon-btn', `data-pdo-icon="${esc(folderId)}"`, esc(folder.icon || PDO_DEFAULT_ICON), 'Change icon')}
+        ${renaming
+          ? `<input class="pdo-rename-input" data-pdo-rename="${esc(folderId)}" value="${esc(folder.name)}" />`
+          : `<span class="pdo-folder-name" data-pdo-rename-start="${esc(folderId)}">${esc(folder.name)}</span>`}
+        <span class="pdo-count" title="Prompts in this folder">(${count})</span>
+        ${pdoButtonHtml('pdo-row-btn pdo-add-prompts', `data-pdo-mass="${esc(folderId)}"`, '+', 'Add prompts')}
+        ${pdoButtonHtml('pdo-row-btn pdo-folder-del' + (deleting ? ' confirming' : ''), `data-pdo-delete="${esc(folderId)}"`, deleting ? 'Sure? ' + PDO_GLYPHS.close : PDO_GLYPHS.close, 'Delete folder')}
+      </div>
+      ${iconPicker}
+      ${memberHtml}
+    </div>`;
+  }
+  
+  function renderPdoPanel() {
+    if (!pdoPanelOpen) return;
+    const panel = ensurePdoPanel();
+    const presetName = currentPreset();
+    const cfg = pdoGetPresetConfig(presetName);
+    const prompts = pdoReadPrompts();
+    const counts = pdoFolderCounts(cfg, prompts);
+    const folderHtml = cfg.folderOrder.length
+      ? cfg.folderOrder.map(folderId => pdoFolderRowHtml(presetName, cfg, folderId, prompts, counts)).join('')
+      : '<div class="pdo-empty">No folders yet</div>';
+  
+    const hidden = pdoIsHidden();
+    const hiddenBanner = hidden
+      ? '<div class="pdo-hidden-notice">Folders hidden — drag reorder enabled in prompt list</div>'
+      : '';
+  
+    panel.querySelector('#pdo-panel-inner').innerHTML = `
+      <div class="pdo-header">
+        <span class="pdo-header-title">Prompt Folders &middot; ${esc(presetName)}</span>
+        ${pdoButtonHtml('pdo-ghost pdo-header-btn', 'id="pdo-hide-toggle"', hidden ? PDO_GLYPHS.eyeOff : PDO_GLYPHS.eye, hidden ? 'Show folders in prompt list' : 'Hide folders from prompt list')}
+        ${pdoButtonHtml('pdo-ghost pdo-header-btn', 'id="pdo-templates-btn"', PDO_GLYPHS.info, 'Templates')}
+        ${pdoButtonHtml('pdo-ghost pdo-header-btn', 'id="pdo-close"', PDO_GLYPHS.close, 'Close')}
+      </div>
+      <div class="pdo-body">
+        ${hiddenBanner}
+        <div id="pdo-folder-list">${folderHtml}</div>
+        <div class="pdo-add-folder">
+          <input id="pdo-new-folder-input" type="text" placeholder="New folder name..." />
+          <button id="pdo-new-folder-btn" type="button">Add</button>
+        </div>
+      </div>`;
+  
+    bindPdoPanelEvents();
+    initPdoFolderSortable();
+    if (pdoRenamingFolder) {
+      const input = panel.querySelector('.pdo-rename-input');
+      if (input) { input.focus(); input.select(); }
+    }
+    if (pdoMassFolder) renderPdoMassPopup();
+    else parent$('.pdo-popup', parentDoc).remove();
+    if (pdoTemplatesOpen) renderPdoTemplatesPopover();
+    else parent$('.pdo-template-panel', parentDoc).remove();
+  }
+  
+  function bindPdoPanelEvents() {
+    const $p = parent$('#pdo-panel', parentDoc);
+    $p.find('#pdo-close').on('click', pdoClosePanel);
+    $p.find('#pdo-hide-toggle').on('click', function() {
+      pdoSetHidden(!pdoIsHidden());
+      renderPdoPanel();
+    });
+    $p.find('#pdo-templates-btn').on('click', function(e) {
+      e.stopPropagation();
+      pdoTemplatesOpen = !pdoTemplatesOpen;
+      pdoTemplateConfirm = null;
+      renderPdoPanel();
+    });
+  
+    $p.find('#pdo-new-folder-btn').on('click', () => {
+      const input = parentDoc.querySelector('#pdo-new-folder-input');
+      const name = input?.value.trim() || '';
+      if (!name) { input?.focus(); return; }
+      const id = pdoCreateFolder(currentPreset(), name);
+      if (!id) pdoShowToast('Folder name already exists');
+    });
+    $p.find('#pdo-new-folder-input').on('keydown', e => {
+      if (e.key === 'Enter') $p.find('#pdo-new-folder-btn').trigger('click');
+    });
+  
+    $p.find('[data-pdo-panel-expand]').on('click', function() {
+      const folderId = attr(this, 'pdo-panel-expand');
+      toggleSet(pdoExpandedPanelFolders, folderId);
+      renderPdoPanel();
+    });
+  
+    $p.find('[data-pdo-icon]').on('click', function() {
+      const folderId = attr(this, 'pdo-icon');
+      pdoIconPickerFolder = pdoIconPickerFolder === folderId ? null : folderId;
+      renderPdoPanel();
+    });
+    $p.find('[data-pdo-icon-choice]').on('click', function() {
+      if (!pdoIconPickerFolder) return;
+      pdoSetFolderIcon(currentPreset(), pdoIconPickerFolder, attr(this, 'pdo-icon-choice'));
+      pdoIconPickerFolder = null;
+    });
+    $p.find('[data-pdo-icon-custom]').on('keydown blur', function(e) {
+      if (e.type === 'keydown' && e.key !== 'Enter') return;
+      const val = $(this).val();
+      if (val) pdoSetFolderIcon(currentPreset(), attr(this, 'pdo-icon-custom'), val);
+      pdoIconPickerFolder = null;
+    }).on('click', e => e.stopPropagation());
+  
+    $p.find('[data-pdo-rename-start]').on('dblclick', function() {
+      pdoRenamingFolder = attr(this, 'pdo-rename-start');
+      renderPdoPanel();
+    });
+    $p.find('[data-pdo-rename]').on('keydown', function(e) {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        const ok = pdoRenameFolder(currentPreset(), attr(this, 'pdo-rename'), $(this).val());
+        if (!ok) pdoShowToast('Folder name already exists');
+        pdoRenamingFolder = null;
+      }
+      if (e.key === 'Escape') { pdoRenamingFolder = null; renderPdoPanel(); }
+    }).on('blur', function() {
+      if (!pdoRenamingFolder) return;
+      const ok = pdoRenameFolder(currentPreset(), attr(this, 'pdo-rename'), $(this).val());
+      if (!ok) pdoShowToast('Folder name already exists');
+      pdoRenamingFolder = null;
+    }).on('click', e => e.stopPropagation());
+  
+    $p.find('[data-pdo-unassign]').on('click', function() {
+      pdoUnassignPrompt(currentPreset(), attr(this, 'pdo-unassign'));
+    });
+    $p.find('[data-pdo-mass]').on('click', function() {
+      pdoMassFolder = attr(this, 'pdo-mass');
+      pdoMassFilter = '';
+      pdoMassChecked = new Set();
+      pdoMassPopupPos = null;
+      renderPdoPanel();
+    });
+  
+    $p.find('[data-pdo-delete]').on('click', function() {
+      const folderId = attr(this, 'pdo-delete');
+      if (pdoDeletingFolders.has(folderId)) {
+        clearTimeout(pdoDeletingFolders.get(folderId));
+        pdoDeletingFolders.delete(folderId);
+        pdoDeleteFolder(currentPreset(), folderId);
+        return;
+      }
+      const timer = setTimeout(() => {
+        pdoDeletingFolders.delete(folderId);
+        renderPdoPanel();
+      }, 3000);
+      pdoDeletingFolders.set(folderId, timer);
+      renderPdoPanel();
+    });
+  }
+  
+  function initPdoFolderSortable() {
+    const listEl = parentDoc.querySelector('#pdo-folder-list');
+    const Sortable = window.parent.Sortable;
+    if (!listEl || !Sortable) return;
+    if (listEl._pdoSortable) {
+      try { listEl._pdoSortable.destroy(); } catch (_) {}
+    }
+    listEl._pdoSortable = Sortable.create(listEl, {
+      animation: 150,
+      draggable: '.pdo-folder-block',
+      handle: '.pdo-drag-handle',
+      ghostClass: 'pdo-sortable-ghost',
+      chosenClass: 'pdo-sortable-chosen',
+      onEnd() {
+        const order = [...listEl.querySelectorAll(':scope > .pdo-folder-block')]
+          .map(el => el.dataset.folderId).filter(Boolean);
+        pdoSetFolderOrder(currentPreset(), order);
+      },
+    });
+  }
+  
+  function pdoPopupPos(anchorSelector) {
+    const anchor = parentDoc.querySelector(anchorSelector);
+    const rect = anchor?.getBoundingClientRect();
+    const top = rect ? rect.bottom + 6 : 80;
+    const left = rect ? rect.left : 80;
+    return { top, left };
+  }
+  
+  function pdoClampFloatingPos(el, top, left) {
+    const margin = 12;
+    const maxHeight = Math.max(180, window.parent.innerHeight - margin * 2);
+    el.style.maxHeight = maxHeight + 'px';
+    const width = Math.min(el.offsetWidth || 320, window.parent.innerWidth - margin * 2);
+    const height = Math.min(el.offsetHeight || maxHeight, maxHeight);
+    return {
+      top: Math.min(Math.max(margin, top), Math.max(margin, window.parent.innerHeight - height - margin)),
+      left: Math.min(Math.max(margin, left), Math.max(margin, window.parent.innerWidth - width - margin)),
+    };
+  }
+  
+  function pdoPlaceFloatingEl(el, pos) {
+    const next = pdoClampFloatingPos(el, pos.top, pos.left);
+    el.style.top = next.top + 'px';
+    el.style.left = next.left + 'px';
+    return next;
+  }
+  
+  function bindPdoFloatingDrag(el, handleSelector, onMoved) {
+    if (!el || el.dataset.pdoFloatingDrag === '1') return;
+    el.dataset.pdoFloatingDrag = '1';
+    parent$(el).on('mousedown touchstart', handleSelector, function(e) {
+      if (parent$(e.target).closest('button, input, select, label').length) return;
+      const src = e.originalEvent?.touches ? e.originalEvent.touches[0] : e;
+      const startX = src.clientX;
+      const startY = src.clientY;
+      const startTop = parseFloat(el.style.top) || 0;
+      const startLeft = parseFloat(el.style.left) || 0;
+      let moved = false;
+  
+      function onMove(ev) {
+        const raw = ev.originalEvent || ev;
+        const p = raw.touches ? raw.touches[0] : raw;
+        const dx = p.clientX - startX;
+        const dy = p.clientY - startY;
+        if (!moved && (Math.abs(dx) > 4 || Math.abs(dy) > 4)) moved = true;
+        if (!moved) return;
+        if (ev.cancelable) ev.preventDefault();
+        const next = pdoPlaceFloatingEl(el, { top: startTop + dy, left: startLeft + dx });
+        if (onMoved) onMoved(next);
+      }
+  
+      function onUp() {
+        parentDoc.removeEventListener('mousemove', onMove);
+        parentDoc.removeEventListener('touchmove', onMove);
+        parentDoc.removeEventListener('mouseup', onUp);
+        parentDoc.removeEventListener('touchend', onUp);
+        parentDoc.removeEventListener('touchcancel', onUp);
+      }
+  
+      parentDoc.addEventListener('mousemove', onMove);
+      parentDoc.addEventListener('touchmove', onMove, { passive: false });
+      parentDoc.addEventListener('mouseup', onUp);
+      parentDoc.addEventListener('touchend', onUp);
+      parentDoc.addEventListener('touchcancel', onUp);
+    });
+  }
+  
+  function renderPdoMassPopup() {
+    parent$('.pdo-popup', parentDoc).remove();
+    const presetName = currentPreset();
+    const cfg = pdoGetPresetConfig(presetName);
+    const folder = cfg.folders[pdoMassFolder];
+    if (!folder) { pdoMassFolder = null; pdoMassPopupPos = null; return; }
+    const filter = pdoMassFilter.trim().toLowerCase();
+    const unassigned = pdoUnassignedPrompts(cfg);
+    const visible = unassigned.filter(prompt => !filter || prompt.name.toLowerCase().includes(filter));
+    const pos = pdoMassPopupPos || pdoPopupPos(`[data-pdo-mass="${pdoMassFolder}"]`);
+  
+    const popup = parentDoc.createElement('div');
+    popup.className = 'pdo-popup';
+    popup.style.top = Math.max(12, pos.top) + 'px';
+    popup.style.left = Math.max(12, pos.left) + 'px';
+    popup.innerHTML = `
+      <div class="pdo-popup-header">
+        <span class="pdo-popup-title">Add to &middot; ${esc(folder.icon)} ${esc(folder.name)}</span>
+        ${pdoButtonHtml('pdo-ghost pdo-header-btn', 'id="pdo-mass-close"', PDO_GLYPHS.close, 'Close')}
+      </div>
+      <div class="pdo-popup-body">
+        <input class="pdo-popup-filter" id="pdo-mass-filter" value="${esc(pdoMassFilter)}" placeholder="${esc(PDO_GLYPHS.search)} filter..." />
+        <div id="pdo-mass-list">${
+          visible.length ? visible.map(prompt => `
+            <label class="pdo-prompt-choice">
+              <input type="checkbox" data-pdo-check="${esc(prompt.id)}"${pdoMassChecked.has(prompt.id) ? ' checked' : ''} />
+              <span class="pdo-prompt-choice-name">${esc(prompt.name)}</span>
+              ${prompt.marker ? '<span class="pdo-marker">marker</span>' : '<span></span>'}
+            </label>`).join('') : '<div class="pdo-empty">No unassigned prompts</div>'
+        }</div>
+        <div class="pdo-popup-actions">
+          <button id="pdo-select-visible" type="button">Select all</button>
+          <button id="pdo-mass-add" type="button">Add</button>
+          <button id="pdo-mass-cancel" type="button">Cancel</button>
+        </div>
+        </div>`;
+    parentDoc.body.appendChild(popup);
+    pdoMassPopupPos = pdoPlaceFloatingEl(popup, pos);
+    bindPdoFloatingDrag(popup, '.pdo-popup-header', next => { pdoMassPopupPos = next; });
+    pdoStopBubble(popup);
+  
+    parent$('#pdo-mass-filter', parentDoc).on('input', function() {
+      pdoMassFilter = $(this).val();
+      renderPdoMassPopup();
+    }).trigger('focus');
+    parent$('[data-pdo-check]', popup).on('change', function() {
+      const id = attr(this, 'pdo-check');
+      this.checked ? pdoMassChecked.add(id) : pdoMassChecked.delete(id);
+    });
+    parent$('#pdo-select-visible', popup).on('click', () => {
+      const allSelected = visible.length && visible.every(prompt => pdoMassChecked.has(prompt.id));
+      visible.forEach(prompt => allSelected ? pdoMassChecked.delete(prompt.id) : pdoMassChecked.add(prompt.id));
+      renderPdoMassPopup();
+    });
+    parent$('#pdo-mass-add', popup).on('click', () => {
+      pdoAssignPrompts(presetName, pdoMassFolder, [...pdoMassChecked]);
+      pdoMassFolder = null;
+      pdoMassChecked = new Set();
+      pdoMassPopupPos = null;
+    });
+    parent$('#pdo-mass-close, #pdo-mass-cancel', popup).on('click', () => {
+      pdoMassFolder = null;
+      pdoMassChecked = new Set();
+      pdoMassPopupPos = null;
+      renderPdoPanel();
+    });
+  }
+  
+  function renderPdoTemplatesPopover() {
+    parent$('.pdo-template-panel', parentDoc).remove();
+    const templates = Object.keys(pdoDbLoad().templates || {}).sort((a, b) => a.localeCompare(b));
+    if (!pdoTemplateApplyName && templates.length) pdoTemplateApplyName = templates[0];
+    if (!pdoTemplateDeleteName && templates.length) pdoTemplateDeleteName = templates[0];
+    const pos = pdoPopupPos('#pdo-templates-btn');
+    const panel = parentDoc.createElement('div');
+    panel.className = 'pdo-template-panel';
+    panel.style.top = Math.max(12, pos.top) + 'px';
+    panel.style.left = Math.max(12, pos.left) + 'px';
+    const confirm = pdoTemplateConfirm ? `
+      <div class="pdo-confirm-row">
+        <span>${esc(pdoTemplateConfirm.label)}</span>
+        <button type="button" id="pdo-template-confirm-yes">Yes</button>
+        <button type="button" id="pdo-template-confirm-cancel">Cancel</button>
+      </div>` : '';
+  
+    const opts = templates.map(name => `<option value="${esc(name)}">${esc(name)}</option>`).join('');
+    panel.innerHTML = `
+      <div class="pdo-popup-header">
+        <span class="pdo-popup-title">Templates</span>
+        ${pdoButtonHtml('pdo-ghost pdo-header-btn', 'id="pdo-template-close"', PDO_GLYPHS.close, 'Close')}
+      </div>
+      <div class="pdo-template-body">
+        ${confirm}
+        <label class="pdo-template-label">Save current preset</label>
+        <div class="pdo-template-row">
+          <input id="pdo-template-save-name" value="${esc(pdoTemplateSaveName)}" placeholder="Name..." />
+          <button id="pdo-template-save" type="button">Save</button>
+        </div>
+        <label class="pdo-template-label">Apply template</label>
+        <div class="pdo-template-row">
+          <select id="pdo-template-apply">${opts}</select>
+          <button id="pdo-template-replace" type="button">Apply</button>
+        </div>
+        <label class="pdo-template-label">Delete template</label>
+        <div class="pdo-template-row">
+          <select id="pdo-template-delete">${opts}</select>
+          <button id="pdo-template-delete-btn" type="button">Delete</button>
+        </div>
+      </div>`;
+    parentDoc.body.appendChild(panel);
+    pdoStopBubble(panel);
+    parent$('#pdo-template-apply', panel).val(pdoTemplateApplyName);
+    parent$('#pdo-template-delete', panel).val(pdoTemplateDeleteName);
+  
+    parent$('#pdo-template-close', panel).on('click', () => {
+      pdoTemplatesOpen = false;
+      pdoTemplateConfirm = null;
+      renderPdoPanel();
+    });
+    parent$('#pdo-template-save-name', panel).on('input', function() { pdoTemplateSaveName = $(this).val(); });
+    parent$('#pdo-template-apply', panel).on('change', function() { pdoTemplateApplyName = $(this).val(); });
+    parent$('#pdo-template-delete', panel).on('change', function() { pdoTemplateDeleteName = $(this).val(); });
+  
+    parent$('#pdo-template-save', panel).on('click', () => {
+      const name = (parent$('#pdo-template-save-name', panel).val() || '').trim();
+      if (!name) return;
+      if (pdoDbLoad().templates[name] && pdoTemplateConfirm?.action !== 'save') {
+        pdoTemplateConfirm = { action: 'save', name, label: `Overwrite "${name}"?` };
+        renderPdoTemplatesPopover();
+        return;
+      }
+      pdoSaveTemplate(name);
+      pdoTemplateSaveName = '';
+      pdoTemplateConfirm = null;
+      pdoShowToast('Template saved');
+      renderPdoPanel();
+    });
+    parent$('#pdo-template-replace', panel).on('click', () => pdoAskTemplateApply());
+    parent$('#pdo-template-delete-btn', panel).on('click', () => {
+      const name = parent$('#pdo-template-delete', panel).val();
+      if (!name) return;
+      pdoTemplateConfirm = { action: 'delete', name, label: `Delete "${name}"?` };
+      renderPdoTemplatesPopover();
+    });
+    parent$('#pdo-template-confirm-cancel', panel).on('click', () => {
+      pdoTemplateConfirm = null;
+      renderPdoTemplatesPopover();
+    });
+    parent$('#pdo-template-confirm-yes', panel).on('click', () => {
+      const c = pdoTemplateConfirm;
+      if (!c) return;
+      if (c.action === 'save') pdoSaveTemplate(c.name);
+      if (c.action === 'replace') pdoApplyTemplate(c.name);
+      if (c.action === 'delete') pdoDeleteTemplate(c.name);
+      pdoTemplateConfirm = null;
+      pdoShowToast('Template updated');
+      renderPdoPanel();
+    });
+  }
+  
+  function pdoAskTemplateApply() {
+    const name = parent$('#pdo-template-apply', parentDoc).val();
+    if (!name) return;
+    pdoTemplateConfirm = {
+      action: 'replace',
+      name,
+      label: `Apply "${name}" — replace current folders?`,
+    };
+    renderPdoTemplatesPopover();
+  }
+  
+  function bindPdoPanelDrag() {
+    const panelEl = parentDoc.querySelector('#pdo-panel');
+    if (!panelEl || panelEl.dataset.pdoDrag === '1') return;
+    panelEl.dataset.pdoDrag = '1';
+    parent$('#pdo-panel', parentDoc).on('mousedown touchstart', '.pdo-header', function(e) {
+      if ($(e.target).closest('button, input, select').length) return;
+      const src = e.originalEvent?.touches ? e.originalEvent.touches[0] : e;
+      const startX = src.clientX;
+      const startY = src.clientY;
+      const startTop = parseFloat(panelEl.style.top) || 0;
+      const startLeft = parseFloat(panelEl.style.left) || 0;
+      let moved = false;
+      function onMove(ev) {
+        const p = ev.originalEvent?.touches ? ev.originalEvent.touches[0] : ev;
+        const dx = p.clientX - startX;
+        const dy = p.clientY - startY;
+        if (!moved && (Math.abs(dx) > 4 || Math.abs(dy) > 4)) moved = true;
+        if (!moved) return;
+        const margin = 10;
+        const pw = panelEl.offsetWidth;
+        const ph = panelEl.offsetHeight;
+        panelEl.style.setProperty('top', Math.min(Math.max(margin, startTop + dy), window.parent.innerHeight - ph - margin) + 'px', 'important');
+        panelEl.style.setProperty('left', Math.min(Math.max(margin, startLeft + dx), window.parent.innerWidth - pw - margin) + 'px', 'important');
+      }
+      function onUp() {
+        parent$(parentDoc).off('mousemove.pdodrag touchmove.pdodrag', onMove).off('mouseup.pdodrag touchend.pdodrag', onUp);
+        if (moved) pdoPosSave(parseFloat(panelEl.style.top), parseFloat(panelEl.style.left));
+      }
+      parent$(parentDoc).on('mousemove.pdodrag touchmove.pdodrag', onMove).on('mouseup.pdodrag touchend.pdodrag', onUp);
+    });
+  }
+  
+
+  // ─── divs-toolbar.js ─────────────────────────────────────────────
+
+  // Prompt Folders toolbar button beside the PSM OpenAI preset shortcut.
+  
+  function injectPdoConfigButton() {
+    if (parent$('#pdo-config-btn', parentDoc).length > 0) return true;
+    const $wrap = parent$('#psm-openai-preset-shortcut-wrap', parentDoc);
+    if (!$wrap.length) return false;
+    const $btn = $('<button/>', {
+      type: 'button',
+      id: 'pdo-config-btn',
+      class: 'menu_button menu_button_icon',
+      title: 'Prompt folders for current preset',
+      html: '<i class="fa-fw fa-solid fa-folder-tree"></i>',
+    });
+    $btn.on('click', e => {
+      e.preventDefault();
+      e.stopPropagation();
+      pdoPanelOpen ? pdoClosePanel() : pdoOpenPanel();
+    });
+    $wrap.append($btn);
+    return true;
+  }
+  
+  function scheduleInjectPdoToolbar() {
+    [0, 300, 800, 1600, 3200, 5200].forEach(ms => {
+      window.parent.setTimeout(() => { injectPdoConfigButton(); }, ms);
+    });
+  }
+  
+
+  // ─── divs-index.js ───────────────────────────────────────────────
+
+  // Prompt Folders bootstrap.
+  
+  function initDivs() {
+    if (parentDoc._pdoObserver) {
+      scheduleInjectPdoToolbar();
+      schedulePdoRepaint();
+      return;
+    }
+  
+    injectDivStyles();
+    initPdoDecorator();
+    scheduleInjectPdoToolbar();
+  
+    try {
+      eventOn(tavern_events.OAI_PRESET_CHANGED_AFTER, () => {
+        pdoMassFolder = null;
+        pdoTemplateConfirm = null;
+        if (pdoPanelOpen) renderPdoPanel();
+        schedulePdoRepaint();
+      });
+    } catch(e) { ERR('pdo eventOn failed:', e); }
+  
+    window.parent.addEventListener('resize', () => {
+      if (pdoPanelOpen) pdoClampPanelToViewport();
+    });
+  
+    $(window).on('pagehide', () => {
+      try { parentDoc._pdoObserver?.disconnect(); } catch (_) {}
+      delete parentDoc._pdoObserver;
+      parent$('#pdo-config-btn, #pdo-panel, #' + PDO_STYLE_ID + ', #' + PDO_COLLAPSE_STYLE_ID, parentDoc).remove();
+      parent$('.pdo-popup, .pdo-template-panel', parentDoc).remove();
+    });
+  
+    LOG('Prompt Folders ready');
+  }
+  
+  setTimeout(initDivs, 800);
+  
+  if (!PSM_ALREADY_LOADED) {
+    setTimeout(init, 500);
+  } else {
+    LOG('PSM chrome already exists; skipped duplicate PSM init');
+  }
+})();
