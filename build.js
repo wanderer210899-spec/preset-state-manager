@@ -9,6 +9,7 @@ const OUTPUT_VERSION = 'v6';
 // Order matters: each file can only call functions declared before it or in
 // files that appear earlier in this list.
 const srcFiles = [
+  'src/utils/i18n.js',      // locale detection + psmT() string table (must load first)
   'src/core/store.js',      // constants, db helpers, shared state
   'src/utils/helpers.js',   // TavernAPI wrappers, DOM utils, position helpers
   'src/ui/styles.js',       // PSM_SCALE + injectStyles()

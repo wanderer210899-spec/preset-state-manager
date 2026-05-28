@@ -262,6 +262,53 @@ function injectDivStyles() {
       transition: opacity .08s ease;
     }
 
+    /* Panel member rows — clickable to jump to host list */
+    .pdo-member-line[data-pdo-goto] { cursor: pointer; }
+    .pdo-member-line[data-pdo-goto]:hover,
+    .pdo-member-line[data-pdo-goto]:focus-visible {
+      background: oklch(from var(--SmartThemeBorderColor, #ccc) l c h / 0.18);
+      outline: none;
+    }
+
+    /* Brief highlight pulse after navigating */
+    @keyframes pdo-flash-pulse {
+      0%   { box-shadow: 0 0 0 2px var(--SmartThemeQuoteColor, #6cf) inset; background: oklch(from var(--SmartThemeQuoteColor, #6cf) l c h / 0.18); }
+      100% { box-shadow: 0 0 0 0 transparent inset; background: transparent; }
+    }
+    #completion_prompt_manager_list > li.pdo-flash { animation: pdo-flash-pulse 1.2s ease-out; }
+
+    /* Search bar above host preset prompt list */
+    #pdo-search-bar {
+      display: flex; align-items: center; flex-wrap: nowrap; gap: ${sp(0.5)};
+      padding: ${sp(0.75)} ${sp(1)}; margin: 0 0 ${sp(0.75)} 0;
+      background: ${bg}; border: 1px solid ${border}; border-radius: 8px;
+      font-family: ${bodyFont}; font-size: ${fluid('body')}; color: ${muted};
+      box-sizing: border-box; width: 100%; min-width: 0; max-width: 100%;
+    }
+    #pdo-search-bar .pdo-search-icon { opacity: 0.7; flex: 0 0 auto; }
+    /* flex:1 1 0 + width:0 → the input always yields to the buttons, so the
+       fixed controls can never be pushed off the right edge on narrow screens. */
+    #pdo-search-bar input {
+      flex: 1 1 0; min-width: 0; width: 0;
+      background: transparent; border: none; outline: none;
+      color: inherit; font: inherit; padding: 2px 4px;
+    }
+    #pdo-search-bar .pdo-search-btn {
+      flex: 0 0 auto; background: transparent; border: none; color: inherit;
+      cursor: pointer; opacity: 0.7; font-size: ${px('body')}; line-height: 1;
+      padding: 2px ${sp(0.5)}; min-width: ${px('label')};
+      display: inline-flex; align-items: center; justify-content: center;
+    }
+    #pdo-search-bar .pdo-search-btn:hover { opacity: 1; }
+
+    /* While search is active: hide non-matching prompt rows and folder headers with no hits */
+    #completion_prompt_manager_list.pdo-search-active > li[data-pm-identifier]:not(.pdo-search-hit) {
+      display: none !important;
+    }
+    #completion_prompt_manager_list.pdo-search-active > .pdo-folder-header:not(.pdo-search-folder-active) {
+      display: none !important;
+    }
+
     @media (max-width: 480px) {
       .pdo-folder-row { grid-template-columns: 22px 26px 28px minmax(0, 1fr) auto 27px 32px; }
       .pdo-member-list, .pdo-icon-popover { margin-left: 70px; }
@@ -278,6 +325,9 @@ function pdoUpdateCollapseRules(cfg) {
   styleEl.textContent = Object.keys(cfg.folders || {}).map(folderId => {
     const c = pdoCollapsedClass(folderId);
     const m = pdoMemberClass(folderId);
-    return `#completion_prompt_manager_list.${c} > .${m}{display:none!important;}`;
+    return [
+      `#completion_prompt_manager_list.${c} > .${m}{display:none!important;}`,
+      `#completion_prompt_manager_list.pdo-search-active.${c} > .${m}.pdo-search-hit{display:revert!important;}`,
+    ].join('\n');
   }).join('\n');
 }

@@ -42,15 +42,15 @@ function buildListHtml() {
     const open       = expandedFolders.has(fname);
     const isRenaming = renamingFolder === fname;
     const swipeActions =
-      `<button class="psm-ghost psm-folder-add" data-folder-add="${esc(fname)}">Add</button>
-       <button class="psm-ghost psm-folder-rename-btn" data-folder-rename-btn="${esc(fname)}">Rename</button>
-       <button class="psm-folder-del swipe" data-folder-del="${esc(fname)}">Delete</button>`;
+      `<button class="psm-ghost psm-folder-add" data-folder-add="${esc(fname)}">${esc(psmT('add'))}</button>
+       <button class="psm-ghost psm-folder-rename-btn" data-folder-rename-btn="${esc(fname)}">${esc(psmT('rename'))}</button>
+       <button class="psm-folder-del swipe" data-folder-del="${esc(fname)}">${esc(psmT('del'))}</button>`;
 
     folderHtml += `<div class="psm-folder-block" data-folder="${esc(fname)}">
       <div class="psm-folder-row" data-folder="${esc(fname)}">
         <div class="psm-folder-row-content">
           <div class="psm-folder-main">
-            <span class="psm-drag-handle" title="Drag to reorder">⠿</span>
+            <span class="psm-drag-handle" title="${esc(psmT('drag_reorder'))}">⠿</span>
             <span class="psm-folder-arrow">${open ? '▼' : '▶'}</span>
             ${isRenaming
               ? `<input class="psm-folder-rename-input" data-folder-rename="${esc(fname)}" value="${esc(fname)}" />`
@@ -72,7 +72,7 @@ function buildListHtml() {
   return `
     <div id="psm-folder-sortable">${folderHtml}</div>
     <div id="psm-ungrouped-list" class="psm-preset-list" data-folder="">${ungroupedHtml}</div>
-    ${!all.length ? '<div class="psm-empty">No presets found</div>' : ''}
+    ${!all.length ? `<div class="psm-empty">${esc(psmT('no_presets'))}</div>` : ''}
   `;
 }
 
@@ -88,20 +88,20 @@ function renderList() {
 
 function renderBrowser() {
   const active    = currentPreset();
-  const extraBtns = `<button class="psm-ghost psm-header-btn psm-active-link" id="psm-active-link" title="Go to active preset">${esc(active)}</button>`;
+  const extraBtns = `<button class="psm-ghost psm-header-btn psm-active-link" id="psm-active-link" title="${esc(psmT('goto_active'))}">${esc(active)}</button>`;
   psmContentRoot().html(
     headerHtml('PSM', false, extraBtns) +
     `<div class="psm-body">
-      <input class="psm-filter" id="psm-filter" type="text" placeholder="🔍 filter presets…" value="${esc(filterText)}" />
+      <input class="psm-filter" id="psm-filter" type="text" placeholder="${esc(psmT('filter_presets_ph'))}" value="${esc(filterText)}" />
       <div class="psm-new-folder-row">
-        <input id="psm-new-folder-input" type="text" placeholder="New folder name…" />
-        <button id="psm-new-folder-btn">+ Folder</button>
+        <input id="psm-new-folder-input" type="text" placeholder="${esc(psmT('new_folder_ph'))}" />
+        <button id="psm-new-folder-btn">${esc(psmT('new_folder_btn'))}</button>
       </div>
       <div id="psm-list">${buildListHtml()}</div>
       <div class="psm-data-row">
-        <button id="psm-export">Export</button>
-        <button id="psm-import">Import</button>
-        <button id="psm-reset" class="psm-danger">Reset</button>
+        <button id="psm-export">${esc(psmT('export'))}</button>
+        <button id="psm-import">${esc(psmT('import'))}</button>
+        <button id="psm-reset" class="psm-danger">${esc(psmT('reset'))}</button>
       </div>
     </div>`
   );
@@ -118,14 +118,14 @@ function presetRowHtml(pn, active, ungrouped, notes, folder) {
   // got left behind when the row was dragged, orphaning it under the wrong preset.
   return `<div class="psm-preset-item" data-preset="${esc(pn)}" data-preset-folder="${esc(folder || '')}">
     <div class="psm-preset-row${cls}">
-      <span class="psm-drag-handle" title="Drag to reorder">⠿</span>
+      <span class="psm-drag-handle" title="${esc(psmT('drag_reorder'))}">⠿</span>
       ${isActive ? '<span class="psm-active-dot"></span>' : '<span class="psm-inactive-spacer"></span>'}
       <button class="psm-ghost psm-preset-name-btn" data-goto="${esc(pn)}">${esc(pn)}</button>
-      <button class="psm-ghost psm-info-btn${noteOpen ? ' open' : ''}" data-info="${esc(pn)}" title="Note">ℹ</button>
+      <button class="psm-ghost psm-info-btn${noteOpen ? ' open' : ''}" data-info="${esc(pn)}" title="${esc(psmT('note_title'))}">ℹ</button>
     </div>
     ${noteOpen ? `<div class="psm-note-inline${cls}">
-      ${note ? esc(note) : '<em>No note.</em>'}
-      <span class="psm-ghost psm-edit-link" data-edit-note="${esc(pn)}">[edit]</span>
+      ${note ? esc(note) : `<em>${esc(psmT('no_note'))}</em>`}
+      <span class="psm-ghost psm-edit-link" data-edit-note="${esc(pn)}">${esc(psmT('edit_link'))}</span>
     </div>` : ''}
   </div>`;
 }
@@ -176,7 +176,7 @@ function bindListEvents($p) {
   $p.find('[data-folder-del]').on('click', function(e) {
     e.stopPropagation();
     const fname = attr(this, 'folder-del');
-    if (!window.parent.confirm(`Delete folder "${fname}"?\nPresets inside will become ungrouped.`)) return;
+    if (!window.parent.confirm(psmT('confirm_delete_folder', fname))) return;
     const m = metaLoad();
     delete m.folders[fname];
     m.folderOrder = (m.folderOrder || []).filter(f => f !== fname);
@@ -453,31 +453,62 @@ function initSortables() {
 // ─── Data reset ───────────────────────────────────────────────────────────
 
 function resetData() {
-  if (!window.parent.confirm(
-    'Reset ALL PSM data?\n\nThis will permanently delete all folders, preset assignments, notes, and snapshots.\nThis cannot be undone.'
-  )) return;
+  if (!window.parent.confirm(psmT('confirm_reset'))) return;
   dbSave({});
   metaSave({ folders: {}, presetNotes: {}, folderOrder: [] });
   expandedFolders.clear();
   expandedNotes.clear();
   filterText    = '';
   renamingFolder = null;
-  showToast('Data reset');
+  showToast(psmT('toast_data_reset'));
   renderView();
 }
 
 // ─── Data export / import ─────────────────────────────────────────────────
 
 function exportData() {
-  const payload = { version: 1, exported: new Date().toISOString(),
-    snapshots: dbLoad(), meta: metaLoad() };
+  parent$('.psm-folder-dropdown', parentDoc).remove();
+  const anchorEl = parent$('#psm-export', parentDoc)[0];
+  if (!anchorEl) { doExport('both'); return; }
+
+  const $drop = $('<div/>', { class: 'psm-folder-dropdown psm-export-menu' });
+  [['snapshots', psmT('export_snapshots')],
+   ['folders',   psmT('export_folders')],
+   ['both',      psmT('export_both')]].forEach(([kind, label]) => {
+    $drop.append($('<div/>', { class: 'psm-fd-item', 'data-export-kind': kind }).text(label));
+  });
+
+  const rect = anchorEl.getBoundingClientRect();
+  parent$('body', parentDoc).append($drop);
+  const dw = $drop[0].offsetWidth, dh = $drop[0].offsetHeight;
+  const vw = window.parent.innerWidth, vh = window.parent.innerHeight;
+  let top = rect.bottom + 4, left = rect.left;
+  if (left + dw > vw - 8) left = Math.max(8, vw - dw - 8);
+  if (top  + dh > vh - 8) top  = Math.max(8, rect.top - dh - 4);
+  $drop.css({ top: top + 'px', left: left + 'px' });
+
+  $drop.find('[data-export-kind]').on('click', function() {
+    const kind = attr(this, 'export-kind');
+    $drop.remove();
+    doExport(kind);
+  });
+
+  setTimeout(() => { parent$(parentDoc).one('click', () => $drop.remove()); }, 0);
+}
+
+function doExport(kind) {
+  const payload = { version: 1, exported: new Date().toISOString(), kind };
+  if (kind === 'snapshots' || kind === 'both') payload.snapshots = dbLoad();
+  if (kind === 'folders'   || kind === 'both') payload.meta      = metaLoad();
+
   const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
   const url  = window.parent.URL.createObjectURL(blob);
   const a    = parentDoc.createElement('a');
-  a.href = url; a.download = 'psm-backup-' + new Date().toISOString().slice(0, 10) + '.json';
+  const tag  = kind === 'snapshots' ? 'snapshots' : kind === 'folders' ? 'folders' : 'backup';
+  a.href = url; a.download = 'psm-' + tag + '-' + new Date().toISOString().slice(0, 10) + '.json';
   parentDoc.body.appendChild(a); a.click();
   parentDoc.body.removeChild(a); window.parent.URL.revokeObjectURL(url);
-  showToast('Exported');
+  showToast(psmT('toast_exported'));
 }
 
 function importData() {
@@ -489,11 +520,17 @@ function importData() {
     reader.onload = function(ev) {
       try {
         const d = JSON.parse(ev.target.result);
-        if (!d.snapshots || !d.meta) { showToast('Invalid backup file'); return; }
-        if (!window.parent.confirm('Overwrite all PSM data with this backup?')) return;
-        dbSave(d.snapshots); metaSave(d.meta);
-        showToast('Imported'); renderView();
-      } catch { showToast('Failed to read file'); }
+        const hasSnaps = !!d && typeof d.snapshots === 'object' && d.snapshots !== null;
+        const hasMeta  = !!d && typeof d.meta      === 'object' && d.meta      !== null;
+        if (!hasSnaps && !hasMeta) { showToast(psmT('toast_invalid_backup')); return; }
+        const confirmMsg = (hasSnaps && hasMeta) ? psmT('confirm_overwrite_all')
+          : hasSnaps ? psmT('confirm_overwrite_snapshots')
+          : psmT('confirm_overwrite_folders');
+        if (!window.parent.confirm(confirmMsg)) return;
+        if (hasSnaps) dbSave(d.snapshots);
+        if (hasMeta)  metaSave(d.meta);
+        showToast(psmT('toast_imported')); renderView();
+      } catch { showToast(psmT('toast_read_fail')); }
     };
     reader.readAsText(file);
   };
@@ -506,7 +543,7 @@ function confirmRename(oldName, newName) {
   renamingFolder = null;
   if (!newName || newName === oldName) { renderList(); return; }
   const m = metaLoad();
-  if (m.folders[newName]) { showToast('Folder name already exists'); renderList(); return; }
+  if (m.folders[newName]) { showToast(psmT('toast_folder_exists')); renderList(); return; }
   m.folders[newName] = m.folders[oldName];
   delete m.folders[oldName];
   const idx = (m.folderOrder || []).indexOf(oldName);
@@ -523,7 +560,7 @@ function showFolderDropdown(folderName, anchorEl) {
   const inAnyFolder = new Set(Object.values(meta.folders).flatMap(f => f.presets || []));
   const available   = allPresetNames().filter(p => p !== 'in_use' && !inAnyFolder.has(p));
 
-  if (!available.length) { showToast('All presets already in folders'); return; }
+  if (!available.length) { showToast(psmT('toast_all_in_folders')); return; }
 
   const $drop = $('<div/>', { class: 'psm-folder-dropdown' });
   available.forEach(pn => {
@@ -576,29 +613,29 @@ function renderDetail() {
           <span class="psm-snap-name">${esc(name)}</span>
           <span class="psm-snap-meta">${esc(s.meta)}</span>
           ${confirming
-            ? `<button class="psm-snap-apply confirming" data-confirm="${esc(name)}">Confirm</button>
-               <button class="psm-ghost psm-snap-cancel" data-cancel="${esc(name)}">Cancel</button>`
-            : `<button class="psm-snap-apply" data-apply="${esc(name)}">Apply</button>`}
+            ? `<button class="psm-snap-apply confirming" data-confirm="${esc(name)}">${esc(psmT('confirm_btn'))}</button>
+               <button class="psm-ghost psm-snap-cancel" data-cancel="${esc(name)}">${esc(psmT('cancel'))}</button>`
+            : `<button class="psm-snap-apply" data-apply="${esc(name)}">${esc(psmT('apply'))}</button>`}
           ${deleting
-            ? `<button class="psm-snap-del confirming" data-del-confirm="${esc(name)}">Delete?</button>
-               <button class="psm-ghost psm-snap-cancel" data-del-cancel="${esc(name)}">Cancel</button>`
-            : `<button class="psm-ghost psm-snap-del" data-del="${esc(name)}" title="Delete">✕</button>`}
+            ? `<button class="psm-snap-del confirming" data-del-confirm="${esc(name)}">${esc(psmT('delete_q'))}</button>
+               <button class="psm-ghost psm-snap-cancel" data-del-cancel="${esc(name)}">${esc(psmT('cancel'))}</button>`
+            : `<button class="psm-ghost psm-snap-del" data-del="${esc(name)}" title="${esc(psmT('del'))}">✕</button>`}
         </div>`;
       }).join('')
-    : '<div class="psm-empty">No snapshots yet</div>';
+    : `<div class="psm-empty">${esc(psmT('no_snapshots'))}</div>`;
 
   psmContentRoot().html(
-    headerHtml(esc(pn), true, '<button class="psm-ghost psm-header-btn" id="psm-detail-info" title="Note">ℹ</button>') +
+    headerHtml(esc(pn), true, `<button class="psm-ghost psm-header-btn" id="psm-detail-info" title="${esc(psmT('note_title'))}">ℹ</button>`) +
     `<div class="psm-body">
       ${isActive ? `<div class="psm-save-row">
-        <input id="psm-snap-input" type="text" placeholder="Name this snapshot…" />
-        <button id="psm-save-btn">Save</button>
+        <input id="psm-snap-input" type="text" placeholder="${esc(psmT('name_snapshot_ph'))}" />
+        <button id="psm-save-btn">${esc(psmT('save'))}</button>
       </div>` : ''}
       ${snapHtml}
       ${isActive ? `<hr class="psm-divider">
         <details class="psm-details">
-          <summary>Prompt states</summary>
-          <label class="psm-show-disabled"><input type="checkbox" id="psm-show-off"> show disabled</label>
+          <summary>${esc(psmT('prompt_states'))}</summary>
+          <label class="psm-show-disabled"><input type="checkbox" id="psm-show-off"> ${esc(psmT('show_disabled'))}</label>
           <div id="psm-prompt-list"></div>
         </details>` : ''}
     </div>`
@@ -619,7 +656,7 @@ function renderPromptList(showDisabled) {
             <span class="psm-pname ${p.enabled ? 'on' : 'off'}">${esc(p.name)}</span>
           </div>`
         ).join('')
-      : '<div class="psm-empty">All prompts disabled</div>'
+      : `<div class="psm-empty">${esc(psmT('all_disabled'))}</div>`
   );
 }
 
@@ -671,23 +708,23 @@ function renderNoteEdit() {
   const folders = Object.keys(meta.folders || {});
   const current = getFolderForPreset(notePreset) || '';
 
-  const folderOpts = `<option value="">— ungrouped —</option>` +
+  const folderOpts = `<option value="">${esc(psmT('ungrouped_opt'))}</option>` +
     folders.map(f => `<option value="${esc(f)}"${f === current ? ' selected' : ''}>${esc(f)}</option>`).join('');
 
   psmContentRoot().html(
-    headerHtml(esc(notePreset) + ' · note', true) +
+    headerHtml(esc(psmT('note_suffix', notePreset)), true) +
     `<div class="psm-body">
-      <label class="psm-form-label">Folder</label>
+      <label class="psm-form-label">${esc(psmT('folder_label'))}</label>
       <select class="psm-form-select" id="psm-folder-sel">${folderOpts}</select>
       <div class="psm-new-folder-row">
-        <input id="psm-new-folder-input" type="text" placeholder="New folder name…" />
-        <button id="psm-new-folder-btn">Create</button>
+        <input id="psm-new-folder-input" type="text" placeholder="${esc(psmT('new_folder_ph'))}" />
+        <button id="psm-new-folder-btn">${esc(psmT('create'))}</button>
       </div>
-      <label class="psm-form-label">Note</label>
+      <label class="psm-form-label">${esc(psmT('note_label'))}</label>
       <textarea class="psm-form-textarea" id="psm-note-text">${esc(note)}</textarea>
       <div class="psm-btn-row">
-        <button id="psm-note-save">Save</button>
-        <button id="psm-note-cancel">Cancel</button>
+        <button id="psm-note-save">${esc(psmT('save'))}</button>
+        <button id="psm-note-cancel">${esc(psmT('cancel'))}</button>
       </div>
     </div>`
   );
@@ -728,7 +765,7 @@ function bindNoteEvents() {
       }
     }
     metaSave(m);
-    showToast('Note saved');
+    showToast(psmT('toast_note_saved'));
     currentView = detailPreset ? 'detail' : 'browser';
     renderView();
   });

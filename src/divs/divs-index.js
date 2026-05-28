@@ -15,6 +15,9 @@ function initDivs() {
     eventOn(tavern_events.OAI_PRESET_CHANGED_AFTER, () => {
       pdoMassFolder = null;
       pdoTemplateConfirm = null;
+      const searchInput = parentDoc.querySelector('#pdo-search-input');
+      if (searchInput) searchInput.value = '';
+      pdoApplySearch('');
       if (pdoPanelOpen) renderPdoPanel();
       schedulePdoRepaint();
     });
@@ -27,7 +30,7 @@ function initDivs() {
   $(window).on('pagehide', () => {
     try { parentDoc._pdoObserver?.disconnect(); } catch (_) {}
     delete parentDoc._pdoObserver;
-    parent$('#pdo-config-btn, #pdo-panel, #' + PDO_STYLE_ID + ', #' + PDO_COLLAPSE_STYLE_ID, parentDoc).remove();
+    parent$('#pdo-config-btn, #pdo-panel, #pdo-search-bar, #' + PDO_STYLE_ID + ', #' + PDO_COLLAPSE_STYLE_ID, parentDoc).remove();
     parent$('.pdo-popup, .pdo-template-panel', parentDoc).remove();
   });
 

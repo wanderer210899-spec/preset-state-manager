@@ -16,7 +16,7 @@ function psmSave(presetName) {
   $input.val('');
   LOG('save: "' + name + '" (' + meta + ') — preset: "' + presetName + '"');
   renderDetail();
-  showToast('Saved "' + name + '"');
+  showToast(psmT('toast_saved', name));
 }
 
 async function psmApply(presetName, snapName) {
@@ -24,7 +24,7 @@ async function psmApply(presetName, snapName) {
   // Two concurrent applies would race each other regardless of chat state.
   if (!psmAcquire()) {
     LOG('psmApply blocked — another operation in progress');
-    showToast('⏳ Previous operation still running — please wait');
+    showToast(psmT('toast_busy'));
     return;
   }
 
@@ -37,7 +37,7 @@ async function psmApply(presetName, snapName) {
   // else), hold here until the DOM is fully stable. We do NOT drop the
   // operation — the user pressed apply and expects it to happen.
   if (!isChatReady()) {
-    showToast('⏳ Waiting for chat to finish loading…');
+    showToast(psmT('toast_wait_chat'));
   }
   await waitForChatReady();
 
@@ -102,7 +102,7 @@ async function psmApplyStates(presetName, snapName, snap) {
     metaSave(m);
     LOG('apply: "' + snapName + '" (' + snap.meta + ') — preset: "' + presetName + '"');
     renderView();
-    showToast('Snapshot applied successfully · ' + snapName);
+    showToast(psmT('toast_applied', snapName));
   } catch(e) {
     ERR('psmApplyStates:', e);
   } finally {
@@ -123,5 +123,5 @@ function psmDelete(presetName, snapName) {
   deletingSnaps.delete(snapKey(presetName, snapName));
   LOG('delete: "' + snapName + '" — preset: "' + presetName + '"');
   renderDetail();
-  showToast('Deleted "' + snapName + '"');
+  showToast(psmT('toast_deleted', snapName));
 }

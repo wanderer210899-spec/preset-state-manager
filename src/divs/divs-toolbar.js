@@ -8,7 +8,7 @@ function injectPdoConfigButton() {
     type: 'button',
     id: 'pdo-config-btn',
     class: 'menu_button menu_button_icon',
-    title: 'Prompt folders for current preset',
+    title: psmT('folders_shortcut_title'),
     html: '<i class="fa-fw fa-solid fa-folder-tree"></i>',
   });
   $btn.on('click', e => {

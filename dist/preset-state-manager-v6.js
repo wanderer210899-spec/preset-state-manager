@@ -10,6 +10,154 @@
 
   const PSM_ALREADY_LOADED = parent$('#psm-panel, #psm-wand-item, #psm-openai-preset-shortcut-wrap', parentDoc).length > 0;
 
+  // ─── i18n.js ─────────────────────────────────────────────────────
+
+  // ─── Localization ─────────────────────────────────────────────────────────
+  // Matches SillyTavern's configured UI language for visible labels only.
+  // Detection: getContext().getCurrentLocale() (lowercased, e.g. 'zh-cn'),
+  // falling back to <html lang>, the 'language' localStorage key, then navigator.
+  // Any locale starting with 'zh' uses the Simplified Chinese set; everything
+  // else falls back to English.
+  
+  function psmDetectLang() {
+    let loc = '';
+    try { loc = window.parent.SillyTavern?.getContext?.()?.getCurrentLocale?.() || ''; } catch (_) {}
+    if (!loc) { try { loc = window.parent.document.documentElement.lang || ''; } catch (_) {} }
+    if (!loc) { try { loc = window.parent.localStorage.getItem('language') || ''; } catch (_) {} }
+    if (!loc) { try { loc = navigator.language || ''; } catch (_) {} }
+    return String(loc).toLowerCase().startsWith('zh') ? 'zh' : 'en';
+  }
+  
+  const PSM_LANG = psmDetectLang();
+  
+  const PSM_I18N = {
+    // ── Common ──────────────────────────────────────────────────────────────
+    close:            { en: 'Close',    zh: '关闭' },
+    cancel:           { en: 'Cancel',   zh: '取消' },
+    save:             { en: 'Save',     zh: '保存' },
+    add:              { en: 'Add',      zh: '添加' },
+    apply:            { en: 'Apply',    zh: '应用' },
+    del:              { en: 'Delete',   zh: '删除' },
+    rename:           { en: 'Rename',   zh: '重命名' },
+    create:           { en: 'Create',   zh: '创建' },
+    yes:              { en: 'Yes',      zh: '确定' },
+    sure:             { en: 'Sure?',    zh: '确定？' },
+    drag_reorder:     { en: 'Drag to reorder', zh: '拖动以重新排序' },
+  
+    // ── Toolbar / shortcuts ───────────────────────────────────────────────────
+    brand:                  { en: 'Preset State Manager', zh: '预设状态管理器' },
+    snap_shortcut_title:    { en: 'Snapshots for current preset', zh: '当前预设的快照' },
+    folders_shortcut_title: { en: 'Prompt folders for current preset', zh: '当前预设的提示词文件夹' },
+  
+    // ── Browser view (snapshot panel) ──────────────────────────────────────────
+    goto_active:        { en: 'Go to active preset', zh: '跳转到当前预设' },
+    filter_presets_ph:  { en: '🔍 filter presets…', zh: '🔍 筛选预设…' },
+    new_folder_ph:      { en: 'New folder name…', zh: '新建文件夹名称…' },
+    new_folder_btn:     { en: '+ Folder', zh: '+ 文件夹' },
+    export:             { en: 'Export', zh: '导出' },
+    import:             { en: 'Import', zh: '导入' },
+    reset:              { en: 'Reset',  zh: '重置' },
+    export_snapshots:   { en: 'Snapshots', zh: '快照' },
+    export_folders:     { en: 'Folders', zh: '文件夹' },
+    export_both:        { en: 'Both', zh: '两者' },
+    no_presets:         { en: 'No presets found', zh: '未找到预设' },
+    note_title:         { en: 'Note', zh: '备注' },
+    no_note:            { en: 'No note.', zh: '暂无备注。' },
+    edit_link:          { en: '[edit]', zh: '[编辑]' },
+  
+    confirm_delete_folder: { en: 'Delete folder "{0}"?\nPresets inside will become ungrouped.',
+                             zh: '删除文件夹“{0}”？\n其中的预设将变为未分组。' },
+    confirm_reset:      { en: 'Reset ALL PSM data?\n\nThis will permanently delete all folders, preset assignments, notes, and snapshots.\nThis cannot be undone.',
+                          zh: '重置所有 PSM 数据？\n\n这将永久删除所有文件夹、预设分组、备注和快照。\n此操作无法撤销。' },
+    toast_data_reset:   { en: 'Data reset', zh: '数据已重置' },
+    toast_exported:     { en: 'Exported', zh: '已导出' },
+    toast_invalid_backup: { en: 'Invalid backup file', zh: '备份文件无效' },
+    confirm_overwrite_all: { en: 'Overwrite snapshots and folders with this backup?', zh: '用此备份覆盖快照和文件夹？' },
+    confirm_overwrite_snapshots: { en: 'Overwrite snapshots with this backup?', zh: '用此备份覆盖快照？' },
+    confirm_overwrite_folders:   { en: 'Overwrite folders with this backup?', zh: '用此备份覆盖文件夹？' },
+    toast_imported:     { en: 'Imported', zh: '已导入' },
+    toast_read_fail:    { en: 'Failed to read file', zh: '读取文件失败' },
+    toast_folder_exists:{ en: 'Folder name already exists', zh: '文件夹名称已存在' },
+    toast_all_in_folders:{ en: 'All presets already in folders', zh: '所有预设都已在文件夹中' },
+  
+    // ── Detail view ────────────────────────────────────────────────────────────
+    confirm_btn:        { en: 'Confirm', zh: '确认' },
+    delete_q:           { en: 'Delete?', zh: '删除？' },
+    no_snapshots:       { en: 'No snapshots yet', zh: '暂无快照' },
+    name_snapshot_ph:   { en: 'Name this snapshot…', zh: '为此快照命名…' },
+    prompt_states:      { en: 'Prompt states', zh: '提示词状态' },
+    show_disabled:      { en: 'show disabled', zh: '显示已禁用' },
+    all_disabled:       { en: 'All prompts disabled', zh: '所有提示词均已禁用' },
+  
+    // ── Note edit view ─────────────────────────────────────────────────────────
+    ungrouped_opt:      { en: '— ungrouped —', zh: '— 未分组 —' },
+    folder_label:       { en: 'Folder', zh: '文件夹' },
+    note_label:         { en: 'Note', zh: '备注' },
+    note_suffix:        { en: '{0} · note', zh: '{0} · 备注' },
+    toast_note_saved:   { en: 'Note saved', zh: '备注已保存' },
+  
+    // ── Snapshot operation toasts ──────────────────────────────────────────────
+    toast_saved:        { en: 'Saved "{0}"', zh: '已保存“{0}”' },
+    toast_busy:         { en: '⏳ Previous operation still running — please wait', zh: '⏳ 上一个操作仍在进行 — 请稍候' },
+    toast_wait_chat:    { en: '⏳ Waiting for chat to finish loading…', zh: '⏳ 正在等待聊天加载完成…' },
+    toast_applied:      { en: 'Snapshot applied successfully · {0}', zh: '快照应用成功 · {0}' },
+    toast_deleted:      { en: 'Deleted "{0}"', zh: '已删除“{0}”' },
+  
+    // ── Prompt Folders panel ───────────────────────────────────────────────────
+    folders_header:        { en: 'Prompt Folders · {0}', zh: '提示词文件夹 · {0}' },
+    hide_folder_prompts:   { en: 'Hide folder prompts', zh: '隐藏文件夹内提示词' },
+    show_folder_prompts:   { en: 'Show folder prompts', zh: '显示文件夹内提示词' },
+    change_icon:           { en: 'Change icon', zh: '更改图标' },
+    add_prompts:           { en: 'Add prompts', zh: '添加提示词' },
+    delete_folder:         { en: 'Delete folder', zh: '删除文件夹' },
+    custom_icon_ph:        { en: 'Custom icon', zh: '自定义图标' },
+    use_icon:              { en: 'Use icon', zh: '使用图标' },
+    remove_from_folder:    { en: 'Remove from folder', zh: '从文件夹移除' },
+    prompts_in_folder:     { en: 'Prompts in this folder', zh: '此文件夹中的提示词数' },
+    no_folders:            { en: 'No folders yet', zh: '暂无文件夹' },
+    no_assigned:           { en: 'No assigned prompts', zh: '暂无已分配的提示词' },
+    show_folders_in_list:  { en: 'Show folders in prompt list', zh: '在提示词列表中显示文件夹' },
+    hide_folders_from_list:{ en: 'Hide folders from prompt list', zh: '在提示词列表中隐藏文件夹' },
+    templates:             { en: 'Templates', zh: '模板' },
+    folders_hidden_banner: { en: 'Folders hidden — drag reorder enabled in prompt list', zh: '文件夹已隐藏 — 可在提示词列表中拖动排序' },
+    jump_to_prompt:        { en: 'Jump to prompt in list', zh: '跳转到列表中的提示词' },
+  
+    // ── Mass-assign popup ──────────────────────────────────────────────────────
+    add_to:             { en: 'Add to · {0} {1}', zh: '添加到 · {0} {1}' },
+    mass_filter_ph:     { en: '🔍 filter...', zh: '🔍 筛选...' },
+    select_all:         { en: 'Select all', zh: '全选' },
+    no_unassigned:      { en: 'No unassigned prompts', zh: '没有未分配的提示词' },
+  
+    // ── Templates popover ──────────────────────────────────────────────────────
+    tpl_save_current:   { en: 'Save current preset', zh: '保存当前预设' },
+    name_ph:            { en: 'Name...', zh: '名称...' },
+    tpl_apply:          { en: 'Apply template', zh: '应用模板' },
+    tpl_delete:         { en: 'Delete template', zh: '删除模板' },
+    confirm_tpl_overwrite:{ en: 'Overwrite "{0}"?', zh: '覆盖“{0}”？' },
+    confirm_tpl_delete: { en: 'Delete "{0}"?', zh: '删除“{0}”？' },
+    confirm_tpl_apply:  { en: 'Apply "{0}" — replace current folders?', zh: '应用“{0}” — 替换当前文件夹？' },
+    toast_tpl_saved:    { en: 'Template saved', zh: '模板已保存' },
+    toast_tpl_updated:  { en: 'Template updated', zh: '模板已更新' },
+    notify_tpl_dup:     { en: 'Template saved; duplicate prompt names used the later match', zh: '模板已保存；重复的提示词名称使用了较后的匹配项' },
+  
+    // ── Search bar (decorator) ─────────────────────────────────────────────────
+    search_prompts_ph:  { en: 'Search prompts (name or content)…', zh: '搜索提示词（名称或内容）…' },
+    clear_search:       { en: 'Clear search', zh: '清除搜索' },
+    collapse_all:       { en: 'Collapse all folders', zh: '折叠所有文件夹' },
+    expand_all:         { en: 'Expand all folders', zh: '展开所有文件夹' },
+    prompt_not_found:   { en: 'Prompt not in current preset', zh: '当前预设中没有该提示词' },
+  };
+  
+  function psmT(key, ...args) {
+    const entry = PSM_I18N[key];
+    let s = entry ? (entry[PSM_LANG] ?? entry.en ?? key) : key;
+    if (args.length) {
+      args.forEach((val, i) => { s = s.split('{' + i + '}').join(String(val)); });
+    }
+    return s;
+  }
+  
+
   // ─── store.js ────────────────────────────────────────────────────
 
   // ─── Constants ────────────────────────────────────────────────────────────
@@ -524,6 +672,7 @@
         padding: ${sp(0.625)} ${sp(1.5)}; cursor: pointer; white-space: nowrap;
         display: flex; align-items: baseline; gap: ${sp(0.75)};
       }
+      .psm-fd-item:hover { background: oklch(from ${border} l c h / 0.18); }
   
       .psm-save-row { display: flex; gap: ${sp(0.75)}; margin-bottom: ${sp(1.25)}; }
       .psm-save-row input {
@@ -709,7 +858,7 @@
     $input.val('');
     LOG('save: "' + name + '" (' + meta + ') — preset: "' + presetName + '"');
     renderDetail();
-    showToast('Saved "' + name + '"');
+    showToast(psmT('toast_saved', name));
   }
   
   async function psmApply(presetName, snapName) {
@@ -717,7 +866,7 @@
     // Two concurrent applies would race each other regardless of chat state.
     if (!psmAcquire()) {
       LOG('psmApply blocked — another operation in progress');
-      showToast('⏳ Previous operation still running — please wait');
+      showToast(psmT('toast_busy'));
       return;
     }
   
@@ -730,7 +879,7 @@
     // else), hold here until the DOM is fully stable. We do NOT drop the
     // operation — the user pressed apply and expects it to happen.
     if (!isChatReady()) {
-      showToast('⏳ Waiting for chat to finish loading…');
+      showToast(psmT('toast_wait_chat'));
     }
     await waitForChatReady();
   
@@ -795,7 +944,7 @@
       metaSave(m);
       LOG('apply: "' + snapName + '" (' + snap.meta + ') — preset: "' + presetName + '"');
       renderView();
-      showToast('Snapshot applied successfully · ' + snapName);
+      showToast(psmT('toast_applied', snapName));
     } catch(e) {
       ERR('psmApplyStates:', e);
     } finally {
@@ -816,7 +965,7 @@
     deletingSnaps.delete(snapKey(presetName, snapName));
     LOG('delete: "' + snapName + '" — preset: "' + presetName + '"');
     renderDetail();
-    showToast('Deleted "' + snapName + '"');
+    showToast(psmT('toast_deleted', snapName));
   }
   
 
@@ -866,15 +1015,15 @@
       const open       = expandedFolders.has(fname);
       const isRenaming = renamingFolder === fname;
       const swipeActions =
-        `<button class="psm-ghost psm-folder-add" data-folder-add="${esc(fname)}">Add</button>
-         <button class="psm-ghost psm-folder-rename-btn" data-folder-rename-btn="${esc(fname)}">Rename</button>
-         <button class="psm-folder-del swipe" data-folder-del="${esc(fname)}">Delete</button>`;
+        `<button class="psm-ghost psm-folder-add" data-folder-add="${esc(fname)}">${esc(psmT('add'))}</button>
+         <button class="psm-ghost psm-folder-rename-btn" data-folder-rename-btn="${esc(fname)}">${esc(psmT('rename'))}</button>
+         <button class="psm-folder-del swipe" data-folder-del="${esc(fname)}">${esc(psmT('del'))}</button>`;
   
       folderHtml += `<div class="psm-folder-block" data-folder="${esc(fname)}">
         <div class="psm-folder-row" data-folder="${esc(fname)}">
           <div class="psm-folder-row-content">
             <div class="psm-folder-main">
-              <span class="psm-drag-handle" title="Drag to reorder">⠿</span>
+              <span class="psm-drag-handle" title="${esc(psmT('drag_reorder'))}">⠿</span>
               <span class="psm-folder-arrow">${open ? '▼' : '▶'}</span>
               ${isRenaming
                 ? `<input class="psm-folder-rename-input" data-folder-rename="${esc(fname)}" value="${esc(fname)}" />`
@@ -896,7 +1045,7 @@
     return `
       <div id="psm-folder-sortable">${folderHtml}</div>
       <div id="psm-ungrouped-list" class="psm-preset-list" data-folder="">${ungroupedHtml}</div>
-      ${!all.length ? '<div class="psm-empty">No presets found</div>' : ''}
+      ${!all.length ? `<div class="psm-empty">${esc(psmT('no_presets'))}</div>` : ''}
     `;
   }
   
@@ -912,20 +1061,20 @@
   
   function renderBrowser() {
     const active    = currentPreset();
-    const extraBtns = `<button class="psm-ghost psm-header-btn psm-active-link" id="psm-active-link" title="Go to active preset">${esc(active)}</button>`;
+    const extraBtns = `<button class="psm-ghost psm-header-btn psm-active-link" id="psm-active-link" title="${esc(psmT('goto_active'))}">${esc(active)}</button>`;
     psmContentRoot().html(
       headerHtml('PSM', false, extraBtns) +
       `<div class="psm-body">
-        <input class="psm-filter" id="psm-filter" type="text" placeholder="🔍 filter presets…" value="${esc(filterText)}" />
+        <input class="psm-filter" id="psm-filter" type="text" placeholder="${esc(psmT('filter_presets_ph'))}" value="${esc(filterText)}" />
         <div class="psm-new-folder-row">
-          <input id="psm-new-folder-input" type="text" placeholder="New folder name…" />
-          <button id="psm-new-folder-btn">+ Folder</button>
+          <input id="psm-new-folder-input" type="text" placeholder="${esc(psmT('new_folder_ph'))}" />
+          <button id="psm-new-folder-btn">${esc(psmT('new_folder_btn'))}</button>
         </div>
         <div id="psm-list">${buildListHtml()}</div>
         <div class="psm-data-row">
-          <button id="psm-export">Export</button>
-          <button id="psm-import">Import</button>
-          <button id="psm-reset" class="psm-danger">Reset</button>
+          <button id="psm-export">${esc(psmT('export'))}</button>
+          <button id="psm-import">${esc(psmT('import'))}</button>
+          <button id="psm-reset" class="psm-danger">${esc(psmT('reset'))}</button>
         </div>
       </div>`
     );
@@ -942,14 +1091,14 @@
     // got left behind when the row was dragged, orphaning it under the wrong preset.
     return `<div class="psm-preset-item" data-preset="${esc(pn)}" data-preset-folder="${esc(folder || '')}">
       <div class="psm-preset-row${cls}">
-        <span class="psm-drag-handle" title="Drag to reorder">⠿</span>
+        <span class="psm-drag-handle" title="${esc(psmT('drag_reorder'))}">⠿</span>
         ${isActive ? '<span class="psm-active-dot"></span>' : '<span class="psm-inactive-spacer"></span>'}
         <button class="psm-ghost psm-preset-name-btn" data-goto="${esc(pn)}">${esc(pn)}</button>
-        <button class="psm-ghost psm-info-btn${noteOpen ? ' open' : ''}" data-info="${esc(pn)}" title="Note">ℹ</button>
+        <button class="psm-ghost psm-info-btn${noteOpen ? ' open' : ''}" data-info="${esc(pn)}" title="${esc(psmT('note_title'))}">ℹ</button>
       </div>
       ${noteOpen ? `<div class="psm-note-inline${cls}">
-        ${note ? esc(note) : '<em>No note.</em>'}
-        <span class="psm-ghost psm-edit-link" data-edit-note="${esc(pn)}">[edit]</span>
+        ${note ? esc(note) : `<em>${esc(psmT('no_note'))}</em>`}
+        <span class="psm-ghost psm-edit-link" data-edit-note="${esc(pn)}">${esc(psmT('edit_link'))}</span>
       </div>` : ''}
     </div>`;
   }
@@ -1000,7 +1149,7 @@
     $p.find('[data-folder-del]').on('click', function(e) {
       e.stopPropagation();
       const fname = attr(this, 'folder-del');
-      if (!window.parent.confirm(`Delete folder "${fname}"?\nPresets inside will become ungrouped.`)) return;
+      if (!window.parent.confirm(psmT('confirm_delete_folder', fname))) return;
       const m = metaLoad();
       delete m.folders[fname];
       m.folderOrder = (m.folderOrder || []).filter(f => f !== fname);
@@ -1277,31 +1426,62 @@
   // ─── Data reset ───────────────────────────────────────────────────────────
   
   function resetData() {
-    if (!window.parent.confirm(
-      'Reset ALL PSM data?\n\nThis will permanently delete all folders, preset assignments, notes, and snapshots.\nThis cannot be undone.'
-    )) return;
+    if (!window.parent.confirm(psmT('confirm_reset'))) return;
     dbSave({});
     metaSave({ folders: {}, presetNotes: {}, folderOrder: [] });
     expandedFolders.clear();
     expandedNotes.clear();
     filterText    = '';
     renamingFolder = null;
-    showToast('Data reset');
+    showToast(psmT('toast_data_reset'));
     renderView();
   }
   
   // ─── Data export / import ─────────────────────────────────────────────────
   
   function exportData() {
-    const payload = { version: 1, exported: new Date().toISOString(),
-      snapshots: dbLoad(), meta: metaLoad() };
+    parent$('.psm-folder-dropdown', parentDoc).remove();
+    const anchorEl = parent$('#psm-export', parentDoc)[0];
+    if (!anchorEl) { doExport('both'); return; }
+  
+    const $drop = $('<div/>', { class: 'psm-folder-dropdown psm-export-menu' });
+    [['snapshots', psmT('export_snapshots')],
+     ['folders',   psmT('export_folders')],
+     ['both',      psmT('export_both')]].forEach(([kind, label]) => {
+      $drop.append($('<div/>', { class: 'psm-fd-item', 'data-export-kind': kind }).text(label));
+    });
+  
+    const rect = anchorEl.getBoundingClientRect();
+    parent$('body', parentDoc).append($drop);
+    const dw = $drop[0].offsetWidth, dh = $drop[0].offsetHeight;
+    const vw = window.parent.innerWidth, vh = window.parent.innerHeight;
+    let top = rect.bottom + 4, left = rect.left;
+    if (left + dw > vw - 8) left = Math.max(8, vw - dw - 8);
+    if (top  + dh > vh - 8) top  = Math.max(8, rect.top - dh - 4);
+    $drop.css({ top: top + 'px', left: left + 'px' });
+  
+    $drop.find('[data-export-kind]').on('click', function() {
+      const kind = attr(this, 'export-kind');
+      $drop.remove();
+      doExport(kind);
+    });
+  
+    setTimeout(() => { parent$(parentDoc).one('click', () => $drop.remove()); }, 0);
+  }
+  
+  function doExport(kind) {
+    const payload = { version: 1, exported: new Date().toISOString(), kind };
+    if (kind === 'snapshots' || kind === 'both') payload.snapshots = dbLoad();
+    if (kind === 'folders'   || kind === 'both') payload.meta      = metaLoad();
+  
     const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
     const url  = window.parent.URL.createObjectURL(blob);
     const a    = parentDoc.createElement('a');
-    a.href = url; a.download = 'psm-backup-' + new Date().toISOString().slice(0, 10) + '.json';
+    const tag  = kind === 'snapshots' ? 'snapshots' : kind === 'folders' ? 'folders' : 'backup';
+    a.href = url; a.download = 'psm-' + tag + '-' + new Date().toISOString().slice(0, 10) + '.json';
     parentDoc.body.appendChild(a); a.click();
     parentDoc.body.removeChild(a); window.parent.URL.revokeObjectURL(url);
-    showToast('Exported');
+    showToast(psmT('toast_exported'));
   }
   
   function importData() {
@@ -1313,11 +1493,17 @@
       reader.onload = function(ev) {
         try {
           const d = JSON.parse(ev.target.result);
-          if (!d.snapshots || !d.meta) { showToast('Invalid backup file'); return; }
-          if (!window.parent.confirm('Overwrite all PSM data with this backup?')) return;
-          dbSave(d.snapshots); metaSave(d.meta);
-          showToast('Imported'); renderView();
-        } catch { showToast('Failed to read file'); }
+          const hasSnaps = !!d && typeof d.snapshots === 'object' && d.snapshots !== null;
+          const hasMeta  = !!d && typeof d.meta      === 'object' && d.meta      !== null;
+          if (!hasSnaps && !hasMeta) { showToast(psmT('toast_invalid_backup')); return; }
+          const confirmMsg = (hasSnaps && hasMeta) ? psmT('confirm_overwrite_all')
+            : hasSnaps ? psmT('confirm_overwrite_snapshots')
+            : psmT('confirm_overwrite_folders');
+          if (!window.parent.confirm(confirmMsg)) return;
+          if (hasSnaps) dbSave(d.snapshots);
+          if (hasMeta)  metaSave(d.meta);
+          showToast(psmT('toast_imported')); renderView();
+        } catch { showToast(psmT('toast_read_fail')); }
       };
       reader.readAsText(file);
     };
@@ -1330,7 +1516,7 @@
     renamingFolder = null;
     if (!newName || newName === oldName) { renderList(); return; }
     const m = metaLoad();
-    if (m.folders[newName]) { showToast('Folder name already exists'); renderList(); return; }
+    if (m.folders[newName]) { showToast(psmT('toast_folder_exists')); renderList(); return; }
     m.folders[newName] = m.folders[oldName];
     delete m.folders[oldName];
     const idx = (m.folderOrder || []).indexOf(oldName);
@@ -1347,7 +1533,7 @@
     const inAnyFolder = new Set(Object.values(meta.folders).flatMap(f => f.presets || []));
     const available   = allPresetNames().filter(p => p !== 'in_use' && !inAnyFolder.has(p));
   
-    if (!available.length) { showToast('All presets already in folders'); return; }
+    if (!available.length) { showToast(psmT('toast_all_in_folders')); return; }
   
     const $drop = $('<div/>', { class: 'psm-folder-dropdown' });
     available.forEach(pn => {
@@ -1400,29 +1586,29 @@
             <span class="psm-snap-name">${esc(name)}</span>
             <span class="psm-snap-meta">${esc(s.meta)}</span>
             ${confirming
-              ? `<button class="psm-snap-apply confirming" data-confirm="${esc(name)}">Confirm</button>
-                 <button class="psm-ghost psm-snap-cancel" data-cancel="${esc(name)}">Cancel</button>`
-              : `<button class="psm-snap-apply" data-apply="${esc(name)}">Apply</button>`}
+              ? `<button class="psm-snap-apply confirming" data-confirm="${esc(name)}">${esc(psmT('confirm_btn'))}</button>
+                 <button class="psm-ghost psm-snap-cancel" data-cancel="${esc(name)}">${esc(psmT('cancel'))}</button>`
+              : `<button class="psm-snap-apply" data-apply="${esc(name)}">${esc(psmT('apply'))}</button>`}
             ${deleting
-              ? `<button class="psm-snap-del confirming" data-del-confirm="${esc(name)}">Delete?</button>
-                 <button class="psm-ghost psm-snap-cancel" data-del-cancel="${esc(name)}">Cancel</button>`
-              : `<button class="psm-ghost psm-snap-del" data-del="${esc(name)}" title="Delete">✕</button>`}
+              ? `<button class="psm-snap-del confirming" data-del-confirm="${esc(name)}">${esc(psmT('delete_q'))}</button>
+                 <button class="psm-ghost psm-snap-cancel" data-del-cancel="${esc(name)}">${esc(psmT('cancel'))}</button>`
+              : `<button class="psm-ghost psm-snap-del" data-del="${esc(name)}" title="${esc(psmT('del'))}">✕</button>`}
           </div>`;
         }).join('')
-      : '<div class="psm-empty">No snapshots yet</div>';
+      : `<div class="psm-empty">${esc(psmT('no_snapshots'))}</div>`;
   
     psmContentRoot().html(
-      headerHtml(esc(pn), true, '<button class="psm-ghost psm-header-btn" id="psm-detail-info" title="Note">ℹ</button>') +
+      headerHtml(esc(pn), true, `<button class="psm-ghost psm-header-btn" id="psm-detail-info" title="${esc(psmT('note_title'))}">ℹ</button>`) +
       `<div class="psm-body">
         ${isActive ? `<div class="psm-save-row">
-          <input id="psm-snap-input" type="text" placeholder="Name this snapshot…" />
-          <button id="psm-save-btn">Save</button>
+          <input id="psm-snap-input" type="text" placeholder="${esc(psmT('name_snapshot_ph'))}" />
+          <button id="psm-save-btn">${esc(psmT('save'))}</button>
         </div>` : ''}
         ${snapHtml}
         ${isActive ? `<hr class="psm-divider">
           <details class="psm-details">
-            <summary>Prompt states</summary>
-            <label class="psm-show-disabled"><input type="checkbox" id="psm-show-off"> show disabled</label>
+            <summary>${esc(psmT('prompt_states'))}</summary>
+            <label class="psm-show-disabled"><input type="checkbox" id="psm-show-off"> ${esc(psmT('show_disabled'))}</label>
             <div id="psm-prompt-list"></div>
           </details>` : ''}
       </div>`
@@ -1443,7 +1629,7 @@
               <span class="psm-pname ${p.enabled ? 'on' : 'off'}">${esc(p.name)}</span>
             </div>`
           ).join('')
-        : '<div class="psm-empty">All prompts disabled</div>'
+        : `<div class="psm-empty">${esc(psmT('all_disabled'))}</div>`
     );
   }
   
@@ -1495,23 +1681,23 @@
     const folders = Object.keys(meta.folders || {});
     const current = getFolderForPreset(notePreset) || '';
   
-    const folderOpts = `<option value="">— ungrouped —</option>` +
+    const folderOpts = `<option value="">${esc(psmT('ungrouped_opt'))}</option>` +
       folders.map(f => `<option value="${esc(f)}"${f === current ? ' selected' : ''}>${esc(f)}</option>`).join('');
   
     psmContentRoot().html(
-      headerHtml(esc(notePreset) + ' · note', true) +
+      headerHtml(esc(psmT('note_suffix', notePreset)), true) +
       `<div class="psm-body">
-        <label class="psm-form-label">Folder</label>
+        <label class="psm-form-label">${esc(psmT('folder_label'))}</label>
         <select class="psm-form-select" id="psm-folder-sel">${folderOpts}</select>
         <div class="psm-new-folder-row">
-          <input id="psm-new-folder-input" type="text" placeholder="New folder name…" />
-          <button id="psm-new-folder-btn">Create</button>
+          <input id="psm-new-folder-input" type="text" placeholder="${esc(psmT('new_folder_ph'))}" />
+          <button id="psm-new-folder-btn">${esc(psmT('create'))}</button>
         </div>
-        <label class="psm-form-label">Note</label>
+        <label class="psm-form-label">${esc(psmT('note_label'))}</label>
         <textarea class="psm-form-textarea" id="psm-note-text">${esc(note)}</textarea>
         <div class="psm-btn-row">
-          <button id="psm-note-save">Save</button>
-          <button id="psm-note-cancel">Cancel</button>
+          <button id="psm-note-save">${esc(psmT('save'))}</button>
+          <button id="psm-note-cancel">${esc(psmT('cancel'))}</button>
         </div>
       </div>`
     );
@@ -1552,7 +1738,7 @@
         }
       }
       metaSave(m);
-      showToast('Note saved');
+      showToast(psmT('toast_note_saved'));
       currentView = detailPreset ? 'detail' : 'browser';
       renderView();
     });
@@ -1613,8 +1799,8 @@
       class:    'list-group-item flex-container flexGap5 interactable',
       tabindex: 0,
       role:     'listitem',
-      title:    'Preset State Manager',
-    }).html('<div class="fa-fw fa-solid fa-sliders extensionsMenuExtensionButton"></div><span>Preset State Manager</span>');
+      title:    psmT('brand'),
+    }).html('<div class="fa-fw fa-solid fa-sliders extensionsMenuExtensionButton"></div><span>' + esc(psmT('brand')) + '</span>');
     $container.append($item);
     parent$('#extensionsMenu', parentDoc).append($container);
     $item.on('click', () => {
@@ -1638,7 +1824,7 @@
       type:  'button',
       id:    'psm-openai-preset-shortcut-btn',
       class: 'menu_button menu_button_icon',
-      title: 'Snapshots for current preset',
+      title: psmT('snap_shortcut_title'),
       html:  '<i class="fa-fw fa-solid fa-layer-group"></i>',
     });
     $btn.on('click', e => {
@@ -2026,7 +2212,7 @@
       assignmentsByName,
     };
     pdoDbSave(db, { repaint: false });
-    if (duplicate) pdoNotify('Template saved; duplicate prompt names used the later match');
+    if (duplicate) pdoNotify(psmT('notify_tpl_dup'));
     return true;
   }
   
@@ -2090,8 +2276,8 @@
     close: '\u00D7',
     info: '\u24D8',
     search: String.fromCodePoint(0x1F50D),
-    eye: String.fromCodePoint(0x1F441),
-    eyeOff: String.fromCodePoint(0x1F648),
+    eye: String.fromCodePoint(0x1F441, 0xFE0E),
+    eyeOff: String.fromCodePoint(0x1F6AB,0xFE0E),
   };
   
   const PDO_ICON_PALETTE = [
@@ -2525,6 +2711,53 @@
         transition: opacity .08s ease;
       }
   
+      /* Panel member rows — clickable to jump to host list */
+      .pdo-member-line[data-pdo-goto] { cursor: pointer; }
+      .pdo-member-line[data-pdo-goto]:hover,
+      .pdo-member-line[data-pdo-goto]:focus-visible {
+        background: oklch(from var(--SmartThemeBorderColor, #ccc) l c h / 0.18);
+        outline: none;
+      }
+  
+      /* Brief highlight pulse after navigating */
+      @keyframes pdo-flash-pulse {
+        0%   { box-shadow: 0 0 0 2px var(--SmartThemeQuoteColor, #6cf) inset; background: oklch(from var(--SmartThemeQuoteColor, #6cf) l c h / 0.18); }
+        100% { box-shadow: 0 0 0 0 transparent inset; background: transparent; }
+      }
+      #completion_prompt_manager_list > li.pdo-flash { animation: pdo-flash-pulse 1.2s ease-out; }
+  
+      /* Search bar above host preset prompt list */
+      #pdo-search-bar {
+        display: flex; align-items: center; flex-wrap: nowrap; gap: ${sp(0.5)};
+        padding: ${sp(0.75)} ${sp(1)}; margin: 0 0 ${sp(0.75)} 0;
+        background: ${bg}; border: 1px solid ${border}; border-radius: 8px;
+        font-family: ${bodyFont}; font-size: ${fluid('body')}; color: ${muted};
+        box-sizing: border-box; width: 100%; min-width: 0; max-width: 100%;
+      }
+      #pdo-search-bar .pdo-search-icon { opacity: 0.7; flex: 0 0 auto; }
+      /* flex:1 1 0 + width:0 → the input always yields to the buttons, so the
+         fixed controls can never be pushed off the right edge on narrow screens. */
+      #pdo-search-bar input {
+        flex: 1 1 0; min-width: 0; width: 0;
+        background: transparent; border: none; outline: none;
+        color: inherit; font: inherit; padding: 2px 4px;
+      }
+      #pdo-search-bar .pdo-search-btn {
+        flex: 0 0 auto; background: transparent; border: none; color: inherit;
+        cursor: pointer; opacity: 0.7; font-size: ${px('body')}; line-height: 1;
+        padding: 2px ${sp(0.5)}; min-width: ${px('label')};
+        display: inline-flex; align-items: center; justify-content: center;
+      }
+      #pdo-search-bar .pdo-search-btn:hover { opacity: 1; }
+  
+      /* While search is active: hide non-matching prompt rows and folder headers with no hits */
+      #completion_prompt_manager_list.pdo-search-active > li[data-pm-identifier]:not(.pdo-search-hit) {
+        display: none !important;
+      }
+      #completion_prompt_manager_list.pdo-search-active > .pdo-folder-header:not(.pdo-search-folder-active) {
+        display: none !important;
+      }
+  
       @media (max-width: 480px) {
         .pdo-folder-row { grid-template-columns: 22px 26px 28px minmax(0, 1fr) auto 27px 32px; }
         .pdo-member-list, .pdo-icon-popover { margin-left: 70px; }
@@ -2541,7 +2774,10 @@
     styleEl.textContent = Object.keys(cfg.folders || {}).map(folderId => {
       const c = pdoCollapsedClass(folderId);
       const m = pdoMemberClass(folderId);
-      return `#completion_prompt_manager_list.${c} > .${m}{display:none!important;}`;
+      return [
+        `#completion_prompt_manager_list.${c} > .${m}{display:none!important;}`,
+        `#completion_prompt_manager_list.pdo-search-active.${c} > .${m}.pdo-search-hit{display:revert!important;}`,
+      ].join('\n');
     }).join('\n');
   }
   
@@ -2552,12 +2788,19 @@
   
   let pdoRepaintQueued = false;
   let pdoApplyingDecorations = false;
+  let pdoSearchQuery = '';
+  let pdoSearchDebounce = null;
   
   function schedulePdoRepaint() {
     if (pdoRepaintQueued) return;
     pdoRepaintQueued = true;
-    const raf = window.parent.requestAnimationFrame || window.requestAnimationFrame;
-    raf(() => {
+    // queueMicrotask, not requestAnimationFrame: RAF gets throttled (background tabs,
+    // power-saver, devtools attached) which leaves pdoUpdateCollapseRules stale for
+    // multi-second windows after the user creates a folder. Microtask fires before
+    // any subsequent user interaction so the new folder's CSS rule is always current
+    // by the time the user clicks its host-list header.
+    const queue = window.parent.queueMicrotask || window.queueMicrotask || (cb => Promise.resolve().then(cb));
+    queue(() => {
       pdoRepaintQueued = false;
       applyDecorations();
     });
@@ -2575,24 +2818,30 @@
       ? mutation.target
       : mutation.target?.parentElement;
     if (targetEl?.closest?.('.pdo-folder-header')) return true;
+    if (targetEl?.closest?.('#pdo-search-bar')) return true;
     if (targetEl && targetEl.id !== 'completion_prompt_manager_list'
         && targetEl.id !== 'completion_prompt_manager'
         && targetEl.closest?.('li[data-pm-identifier]')) {
       return true;
     }
     const added = [...mutation.addedNodes || []].filter(node => node.nodeType === 1);
-    if (!added.length) return false;
-    return added.every(node => {
-      const el = /** @type {Element} */ (node);
-      return [...el.classList || []].some(cls => cls.startsWith('pdo-'))
+    const removed = [...mutation.removedNodes || []].filter(node => node.nodeType === 1);
+    if (!added.length && !removed.length) return false;
+    // Only PSM-OWNED removals are ignorable — specifically the .pdo-folder-header
+    // rows that applyDecorations strips and re-inserts each pass. If we treat any
+    // pdo-class node removal as ignorable we'd miss ST deleting a prompt row that
+    // happened to carry a pdo-member-* class.
+    const isPsmOwned = el => el.classList?.contains('pdo-folder-header') || el.id === 'pdo-search-bar';
+    const isPsmAdded = el => [...el.classList || []].some(cls => cls.startsWith('pdo-'))
         || !!el.querySelector?.('[class*="pdo-"]');
-    });
+    return added.every(isPsmAdded) && removed.every(isPsmOwned);
   }
   
   function pdoCleanPromptRow(row) {
     [...row.classList].forEach(cls => {
       if (cls.startsWith('pdo-member-')) row.classList.remove(cls);
     });
+    row.classList.remove('pdo-search-hit');
     row.removeAttribute('data-pdo-folder');
   }
   
@@ -2652,9 +2901,12 @@
     const list = pdoListEl();
     if (!list) return;
   
+    pdoEnsureSearchBar();
+  
     if (pdoIsHidden()) {
       list.querySelectorAll(':scope > .pdo-folder-header').forEach(h => h.remove());
       pdoCleanListClasses(list);
+      list.classList.remove('pdo-search-active');
       [...list.querySelectorAll(':scope > li[data-pm-identifier]')].forEach(pdoCleanPromptRow);
       pdoManageSortable();
       return;
@@ -2718,12 +2970,21 @@
       });
       pdoManageSortable();
     } finally {
-      pdoApplyingDecorations = false;
+      // Defer the reset by one microtask. Mutations made above are delivered to
+      // the observer as a microtask queued BEFORE this one (FIFO). That observer
+      // tick must still see pdoApplyingDecorations === true so it returns early
+      // instead of looping back via schedulePdoRepaint.
+      const queue = window.parent.queueMicrotask || window.queueMicrotask || (cb => Promise.resolve().then(cb));
+      queue(() => { pdoApplyingDecorations = false; });
     }
+  
+    if (pdoSearchQuery) pdoApplySearch(pdoSearchQuery);
+    else list.classList.remove('pdo-search-active');
   }
   
   function initPdoDecorator() {
     if (parentDoc._pdoObserver) {
+      pdoEnsureSearchBar();
       schedulePdoRepaint();
       return;
     }
@@ -2736,7 +2997,121 @@
     });
     observer.observe(root, { childList: true, subtree: true });
     parentDoc._pdoObserver = observer;
+    pdoEnsureSearchBar();
     schedulePdoRepaint();
+  }
+  
+  function pdoGotoPrompt(promptId) {
+    const list = pdoListEl();
+    if (!list || !promptId) return;
+    const selector = (window.parent.CSS && CSS.escape) ? CSS.escape(promptId) : promptId.replace(/"/g, '\\"');
+    const row = list.querySelector(':scope > li[data-pm-identifier="' + selector + '"]');
+    if (!row) { pdoNotify(psmT('prompt_not_found')); return; }
+  
+    const presetName = currentPreset();
+    const cfg = pdoGetPresetConfig(presetName);
+    const folderId = cfg.assignments[promptId];
+    if (folderId && cfg.folders[folderId] && pdoIsCollapsed(presetName, folderId, cfg.folders[folderId])) {
+      pdoSetCollapsed(presetName, folderId, false, { panel: true, repaint: false });
+      list.classList.remove(pdoCollapsedClass(folderId));
+      const chevron = list.querySelector('.pdo-folder-header-' + folderId + ' .pdo-native-chevron');
+      if (chevron) chevron.textContent = PDO_GLYPHS.down;
+    }
+  
+    const raf = window.parent.requestAnimationFrame || window.requestAnimationFrame;
+    raf(() => {
+      row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      row.classList.add('pdo-flash');
+      setTimeout(() => row.classList.remove('pdo-flash'), 1200);
+    });
+  }
+  
+  function pdoEnsureSearchBar() {
+    const list = pdoListEl();
+    if (!list || !list.parentNode) return;
+    if (parentDoc.getElementById('pdo-search-bar')) return;
+    const bar = parentDoc.createElement('div');
+    bar.id = 'pdo-search-bar';
+    bar.setAttribute('data-pdo-ignore', '1');
+    bar.innerHTML =
+      '<span class="pdo-search-icon" aria-hidden="true">' + PDO_GLYPHS.search + '</span>' +
+      '<input type="text" id="pdo-search-input" placeholder="' + esc(psmT('search_prompts_ph')) + '" autocomplete="off" />' +
+      '<button type="button" id="pdo-search-clear" class="pdo-search-btn" title="' + esc(psmT('clear_search')) + '">' + PDO_GLYPHS.close + '</button>' +
+      '<button type="button" id="pdo-collapse-all" class="pdo-search-btn" title="' + esc(psmT('collapse_all')) + '"><i class="fa-solid fa-angles-up"></i></button>' +
+      '<button type="button" id="pdo-expand-all" class="pdo-search-btn" title="' + esc(psmT('expand_all')) + '"><i class="fa-solid fa-angles-down"></i></button>';
+    list.parentNode.insertBefore(bar, list);
+    pdoStopBubble(bar);
+  
+    const input = bar.querySelector('#pdo-search-input');
+    const clear = bar.querySelector('#pdo-search-clear');
+    input.value = pdoSearchQuery;
+    input.addEventListener('input', e => {
+      clearTimeout(pdoSearchDebounce);
+      const val = e.target.value;
+      pdoSearchDebounce = setTimeout(() => pdoApplySearch(val), 150);
+    });
+    clear.addEventListener('click', () => {
+      clearTimeout(pdoSearchDebounce);
+      input.value = '';
+      pdoApplySearch('');
+      input.focus();
+    });
+    bar.querySelector('#pdo-collapse-all').addEventListener('click', () => pdoSetAllFoldersCollapsed(true));
+    bar.querySelector('#pdo-expand-all').addEventListener('click', () => pdoSetAllFoldersCollapsed(false));
+  }
+  
+  function pdoSetAllFoldersCollapsed(collapsed) {
+    const list = pdoListEl();
+    if (!list) return;
+    const presetName = currentPreset();
+    const cfg = pdoGetPresetConfig(presetName);
+    Object.keys(cfg.folders || {}).forEach(folderId => {
+      pdoSetCollapsed(presetName, folderId, collapsed, { panel: false, repaint: false });
+      list.classList.toggle(pdoCollapsedClass(folderId), collapsed);
+      const chevron = list.querySelector('.pdo-folder-header-' + folderId + ' .pdo-native-chevron');
+      if (chevron) chevron.textContent = collapsed ? PDO_GLYPHS.right : PDO_GLYPHS.down;
+    });
+  }
+  
+  function pdoApplySearch(query) {
+    pdoSearchQuery = String(query || '').trim().toLowerCase();
+    const list = pdoListEl();
+    if (!list) return;
+  
+    list.querySelectorAll(':scope > li[data-pm-identifier].pdo-search-hit')
+        .forEach(r => r.classList.remove('pdo-search-hit'));
+    list.querySelectorAll(':scope > .pdo-folder-header.pdo-search-folder-active')
+        .forEach(h => h.classList.remove('pdo-search-folder-active'));
+  
+    if (!pdoSearchQuery) {
+      list.classList.remove('pdo-search-active');
+      return;
+    }
+  
+    const presetName = currentPreset();
+    const cfg = pdoGetPresetConfig(presetName);
+    const source = pdoReadPromptSource();
+    const hits = new Set();
+    source.forEach(p => {
+      const id = String(p?.identifier ?? p?.id ?? '');
+      if (!id) return;
+      const hay = (String(p?.name || '') + '\n' + String(p?.content || '')).toLowerCase();
+      if (hay.includes(pdoSearchQuery)) hits.add(id);
+    });
+  
+    const folderHits = new Set();
+    list.querySelectorAll(':scope > li[data-pm-identifier]').forEach(row => {
+      const id = row.getAttribute('data-pm-identifier');
+      if (!id || !hits.has(id)) return;
+      row.classList.add('pdo-search-hit');
+      const fid = cfg.assignments[id];
+      if (fid) folderHits.add(fid);
+    });
+    folderHits.forEach(fid => {
+      const header = list.querySelector(':scope > .pdo-folder-header-' + fid);
+      if (header) header.classList.add('pdo-search-folder-active');
+    });
+    list.classList.add('pdo-search-active');
   }
   
 
@@ -2817,30 +3192,30 @@
   
     const memberHtml = expanded ? `<div class="pdo-member-list" data-folder-members="${esc(folderId)}">${
       members.length ? members.map(prompt => `
-        <div class="pdo-member-line">
+        <div class="pdo-member-line" data-pdo-goto="${esc(prompt.id)}" role="button" tabindex="0" title="${esc(psmT('jump_to_prompt'))}">
           <span class="pdo-member-name">${esc(prompt.name)}</span>
-          ${pdoButtonHtml('pdo-row-btn pdo-unassign', `data-pdo-unassign="${esc(prompt.id)}"`, PDO_GLYPHS.remove, 'Remove from folder')}
+          ${pdoButtonHtml('pdo-row-btn pdo-unassign', `data-pdo-unassign="${esc(prompt.id)}"`, PDO_GLYPHS.remove, psmT('remove_from_folder'))}
         </div>
-      `).join('') : '<div class="pdo-member-line"><span class="pdo-member-name">No assigned prompts</span><span></span></div>'
+      `).join('') : `<div class="pdo-member-line"><span class="pdo-member-name">${esc(psmT('no_assigned'))}</span><span></span></div>`
     }</div>` : '';
   
     const iconPicker = pdoIconPickerFolder === folderId ? `
       <div class="pdo-icon-popover" data-icon-popover="${esc(folderId)}">
-        ${PDO_ICON_PALETTE.map(icon => pdoButtonHtml('pdo-row-btn pdo-icon-choice', `data-pdo-icon-choice="${esc(icon)}"`, esc(icon), 'Use icon')).join('')}
-        <input class="pdo-icon-custom" data-pdo-icon-custom="${esc(folderId)}" maxlength="8" placeholder="Custom icon" />
+        ${PDO_ICON_PALETTE.map(icon => pdoButtonHtml('pdo-row-btn pdo-icon-choice', `data-pdo-icon-choice="${esc(icon)}"`, esc(icon), psmT('use_icon'))).join('')}
+        <input class="pdo-icon-custom" data-pdo-icon-custom="${esc(folderId)}" maxlength="8" placeholder="${esc(psmT('custom_icon_ph'))}" />
       </div>` : '';
   
     return `<div class="pdo-folder-block" data-folder-id="${esc(folderId)}">
       <div class="pdo-folder-row">
-        <span class="pdo-drag-handle" title="Drag to reorder">${PDO_GLYPHS.drag}</span>
-        ${pdoButtonHtml('pdo-row-btn pdo-collapse-btn', `data-pdo-panel-expand="${esc(folderId)}"`, expanded ? PDO_GLYPHS.down : PDO_GLYPHS.right, expanded ? 'Hide folder prompts' : 'Show folder prompts')}
-        ${pdoButtonHtml('pdo-row-btn pdo-icon-btn', `data-pdo-icon="${esc(folderId)}"`, esc(folder.icon || PDO_DEFAULT_ICON), 'Change icon')}
+        <span class="pdo-drag-handle" title="${esc(psmT('drag_reorder'))}">${PDO_GLYPHS.drag}</span>
+        ${pdoButtonHtml('pdo-row-btn pdo-collapse-btn', `data-pdo-panel-expand="${esc(folderId)}"`, expanded ? PDO_GLYPHS.down : PDO_GLYPHS.right, expanded ? psmT('hide_folder_prompts') : psmT('show_folder_prompts'))}
+        ${pdoButtonHtml('pdo-row-btn pdo-icon-btn', `data-pdo-icon="${esc(folderId)}"`, esc(folder.icon || PDO_DEFAULT_ICON), psmT('change_icon'))}
         ${renaming
           ? `<input class="pdo-rename-input" data-pdo-rename="${esc(folderId)}" value="${esc(folder.name)}" />`
           : `<span class="pdo-folder-name" data-pdo-rename-start="${esc(folderId)}">${esc(folder.name)}</span>`}
-        <span class="pdo-count" title="Prompts in this folder">(${count})</span>
-        ${pdoButtonHtml('pdo-row-btn pdo-add-prompts', `data-pdo-mass="${esc(folderId)}"`, '+', 'Add prompts')}
-        ${pdoButtonHtml('pdo-row-btn pdo-folder-del' + (deleting ? ' confirming' : ''), `data-pdo-delete="${esc(folderId)}"`, deleting ? 'Sure? ' + PDO_GLYPHS.close : PDO_GLYPHS.close, 'Delete folder')}
+        <span class="pdo-count" title="${esc(psmT('prompts_in_folder'))}">(${count})</span>
+        ${pdoButtonHtml('pdo-row-btn pdo-add-prompts', `data-pdo-mass="${esc(folderId)}"`, '+', psmT('add_prompts'))}
+        ${pdoButtonHtml('pdo-row-btn pdo-folder-del' + (deleting ? ' confirming' : ''), `data-pdo-delete="${esc(folderId)}"`, deleting ? psmT('sure') + ' ' + PDO_GLYPHS.close : PDO_GLYPHS.close, psmT('delete_folder'))}
       </div>
       ${iconPicker}
       ${memberHtml}
@@ -2856,26 +3231,26 @@
     const counts = pdoFolderCounts(cfg, prompts);
     const folderHtml = cfg.folderOrder.length
       ? cfg.folderOrder.map(folderId => pdoFolderRowHtml(presetName, cfg, folderId, prompts, counts)).join('')
-      : '<div class="pdo-empty">No folders yet</div>';
+      : `<div class="pdo-empty">${esc(psmT('no_folders'))}</div>`;
   
     const hidden = pdoIsHidden();
     const hiddenBanner = hidden
-      ? '<div class="pdo-hidden-notice">Folders hidden — drag reorder enabled in prompt list</div>'
+      ? `<div class="pdo-hidden-notice">${esc(psmT('folders_hidden_banner'))}</div>`
       : '';
   
     panel.querySelector('#pdo-panel-inner').innerHTML = `
       <div class="pdo-header">
-        <span class="pdo-header-title">Prompt Folders &middot; ${esc(presetName)}</span>
-        ${pdoButtonHtml('pdo-ghost pdo-header-btn', 'id="pdo-hide-toggle"', hidden ? PDO_GLYPHS.eyeOff : PDO_GLYPHS.eye, hidden ? 'Show folders in prompt list' : 'Hide folders from prompt list')}
-        ${pdoButtonHtml('pdo-ghost pdo-header-btn', 'id="pdo-templates-btn"', PDO_GLYPHS.info, 'Templates')}
-        ${pdoButtonHtml('pdo-ghost pdo-header-btn', 'id="pdo-close"', PDO_GLYPHS.close, 'Close')}
+        <span class="pdo-header-title">${esc(psmT('folders_header', presetName))}</span>
+        ${pdoButtonHtml('pdo-ghost pdo-header-btn', 'id="pdo-hide-toggle"', hidden ? PDO_GLYPHS.eyeOff : PDO_GLYPHS.eye, hidden ? psmT('show_folders_in_list') : psmT('hide_folders_from_list'))}
+        ${pdoButtonHtml('pdo-ghost pdo-header-btn', 'id="pdo-templates-btn"', PDO_GLYPHS.info, psmT('templates'))}
+        ${pdoButtonHtml('pdo-ghost pdo-header-btn', 'id="pdo-close"', PDO_GLYPHS.close, psmT('close'))}
       </div>
       <div class="pdo-body">
         ${hiddenBanner}
         <div id="pdo-folder-list">${folderHtml}</div>
         <div class="pdo-add-folder">
-          <input id="pdo-new-folder-input" type="text" placeholder="New folder name..." />
-          <button id="pdo-new-folder-btn" type="button">Add</button>
+          <input id="pdo-new-folder-input" type="text" placeholder="${esc(psmT('new_folder_ph'))}" />
+          <button id="pdo-new-folder-btn" type="button">${esc(psmT('add'))}</button>
         </div>
       </div>`;
   
@@ -2910,7 +3285,7 @@
       const name = input?.value.trim() || '';
       if (!name) { input?.focus(); return; }
       const id = pdoCreateFolder(currentPreset(), name);
-      if (!id) pdoShowToast('Folder name already exists');
+      if (!id) pdoShowToast(psmT('toast_folder_exists'));
     });
     $p.find('#pdo-new-folder-input').on('keydown', e => {
       if (e.key === 'Enter') $p.find('#pdo-new-folder-btn').trigger('click');
@@ -2947,19 +3322,29 @@
       if (e.key === 'Enter') {
         e.preventDefault();
         const ok = pdoRenameFolder(currentPreset(), attr(this, 'pdo-rename'), $(this).val());
-        if (!ok) pdoShowToast('Folder name already exists');
+        if (!ok) pdoShowToast(psmT('toast_folder_exists'));
         pdoRenamingFolder = null;
       }
       if (e.key === 'Escape') { pdoRenamingFolder = null; renderPdoPanel(); }
     }).on('blur', function() {
       if (!pdoRenamingFolder) return;
       const ok = pdoRenameFolder(currentPreset(), attr(this, 'pdo-rename'), $(this).val());
-      if (!ok) pdoShowToast('Folder name already exists');
+      if (!ok) pdoShowToast(psmT('toast_folder_exists'));
       pdoRenamingFolder = null;
     }).on('click', e => e.stopPropagation());
   
-    $p.find('[data-pdo-unassign]').on('click', function() {
+    $p.find('[data-pdo-unassign]').on('click', function(e) {
+      e.stopPropagation();
       pdoUnassignPrompt(currentPreset(), attr(this, 'pdo-unassign'));
+    });
+    $p.find('[data-pdo-goto]').on('click', function(e) {
+      if (e.target.closest('.pdo-unassign')) return;
+      pdoGotoPrompt(attr(this, 'pdo-goto'));
+    });
+    $p.find('[data-pdo-goto]').on('keydown', function(e) {
+      if (e.key !== 'Enter' && e.key !== ' ') return;
+      e.preventDefault();
+      pdoGotoPrompt(attr(this, 'pdo-goto'));
     });
     $p.find('[data-pdo-mass]').on('click', function() {
       pdoMassFolder = attr(this, 'pdo-mass');
@@ -3091,23 +3476,23 @@
     popup.style.left = Math.max(12, pos.left) + 'px';
     popup.innerHTML = `
       <div class="pdo-popup-header">
-        <span class="pdo-popup-title">Add to &middot; ${esc(folder.icon)} ${esc(folder.name)}</span>
-        ${pdoButtonHtml('pdo-ghost pdo-header-btn', 'id="pdo-mass-close"', PDO_GLYPHS.close, 'Close')}
+        <span class="pdo-popup-title">${esc(psmT('add_to', folder.icon, folder.name))}</span>
+        ${pdoButtonHtml('pdo-ghost pdo-header-btn', 'id="pdo-mass-close"', PDO_GLYPHS.close, psmT('close'))}
       </div>
       <div class="pdo-popup-body">
-        <input class="pdo-popup-filter" id="pdo-mass-filter" value="${esc(pdoMassFilter)}" placeholder="${esc(PDO_GLYPHS.search)} filter..." />
+        <input class="pdo-popup-filter" id="pdo-mass-filter" value="${esc(pdoMassFilter)}" placeholder="${esc(psmT('mass_filter_ph'))}" />
         <div id="pdo-mass-list">${
           visible.length ? visible.map(prompt => `
             <label class="pdo-prompt-choice">
               <input type="checkbox" data-pdo-check="${esc(prompt.id)}"${pdoMassChecked.has(prompt.id) ? ' checked' : ''} />
               <span class="pdo-prompt-choice-name">${esc(prompt.name)}</span>
               ${prompt.marker ? '<span class="pdo-marker">marker</span>' : '<span></span>'}
-            </label>`).join('') : '<div class="pdo-empty">No unassigned prompts</div>'
+            </label>`).join('') : `<div class="pdo-empty">${esc(psmT('no_unassigned'))}</div>`
         }</div>
         <div class="pdo-popup-actions">
-          <button id="pdo-select-visible" type="button">Select all</button>
-          <button id="pdo-mass-add" type="button">Add</button>
-          <button id="pdo-mass-cancel" type="button">Cancel</button>
+          <button id="pdo-select-visible" type="button">${esc(psmT('select_all'))}</button>
+          <button id="pdo-mass-add" type="button">${esc(psmT('add'))}</button>
+          <button id="pdo-mass-cancel" type="button">${esc(psmT('cancel'))}</button>
         </div>
         </div>`;
     parentDoc.body.appendChild(popup);
@@ -3155,32 +3540,32 @@
     const confirm = pdoTemplateConfirm ? `
       <div class="pdo-confirm-row">
         <span>${esc(pdoTemplateConfirm.label)}</span>
-        <button type="button" id="pdo-template-confirm-yes">Yes</button>
-        <button type="button" id="pdo-template-confirm-cancel">Cancel</button>
+        <button type="button" id="pdo-template-confirm-yes">${esc(psmT('yes'))}</button>
+        <button type="button" id="pdo-template-confirm-cancel">${esc(psmT('cancel'))}</button>
       </div>` : '';
   
     const opts = templates.map(name => `<option value="${esc(name)}">${esc(name)}</option>`).join('');
     panel.innerHTML = `
       <div class="pdo-popup-header">
-        <span class="pdo-popup-title">Templates</span>
-        ${pdoButtonHtml('pdo-ghost pdo-header-btn', 'id="pdo-template-close"', PDO_GLYPHS.close, 'Close')}
+        <span class="pdo-popup-title">${esc(psmT('templates'))}</span>
+        ${pdoButtonHtml('pdo-ghost pdo-header-btn', 'id="pdo-template-close"', PDO_GLYPHS.close, psmT('close'))}
       </div>
       <div class="pdo-template-body">
         ${confirm}
-        <label class="pdo-template-label">Save current preset</label>
+        <label class="pdo-template-label">${esc(psmT('tpl_save_current'))}</label>
         <div class="pdo-template-row">
-          <input id="pdo-template-save-name" value="${esc(pdoTemplateSaveName)}" placeholder="Name..." />
-          <button id="pdo-template-save" type="button">Save</button>
+          <input id="pdo-template-save-name" value="${esc(pdoTemplateSaveName)}" placeholder="${esc(psmT('name_ph'))}" />
+          <button id="pdo-template-save" type="button">${esc(psmT('save'))}</button>
         </div>
-        <label class="pdo-template-label">Apply template</label>
+        <label class="pdo-template-label">${esc(psmT('tpl_apply'))}</label>
         <div class="pdo-template-row">
           <select id="pdo-template-apply">${opts}</select>
-          <button id="pdo-template-replace" type="button">Apply</button>
+          <button id="pdo-template-replace" type="button">${esc(psmT('apply'))}</button>
         </div>
-        <label class="pdo-template-label">Delete template</label>
+        <label class="pdo-template-label">${esc(psmT('tpl_delete'))}</label>
         <div class="pdo-template-row">
           <select id="pdo-template-delete">${opts}</select>
-          <button id="pdo-template-delete-btn" type="button">Delete</button>
+          <button id="pdo-template-delete-btn" type="button">${esc(psmT('del'))}</button>
         </div>
       </div>`;
     parentDoc.body.appendChild(panel);
@@ -3201,21 +3586,21 @@
       const name = (parent$('#pdo-template-save-name', panel).val() || '').trim();
       if (!name) return;
       if (pdoDbLoad().templates[name] && pdoTemplateConfirm?.action !== 'save') {
-        pdoTemplateConfirm = { action: 'save', name, label: `Overwrite "${name}"?` };
+        pdoTemplateConfirm = { action: 'save', name, label: psmT('confirm_tpl_overwrite', name) };
         renderPdoTemplatesPopover();
         return;
       }
       pdoSaveTemplate(name);
       pdoTemplateSaveName = '';
       pdoTemplateConfirm = null;
-      pdoShowToast('Template saved');
+      pdoShowToast(psmT('toast_tpl_saved'));
       renderPdoPanel();
     });
     parent$('#pdo-template-replace', panel).on('click', () => pdoAskTemplateApply());
     parent$('#pdo-template-delete-btn', panel).on('click', () => {
       const name = parent$('#pdo-template-delete', panel).val();
       if (!name) return;
-      pdoTemplateConfirm = { action: 'delete', name, label: `Delete "${name}"?` };
+      pdoTemplateConfirm = { action: 'delete', name, label: psmT('confirm_tpl_delete', name) };
       renderPdoTemplatesPopover();
     });
     parent$('#pdo-template-confirm-cancel', panel).on('click', () => {
@@ -3229,7 +3614,7 @@
       if (c.action === 'replace') pdoApplyTemplate(c.name);
       if (c.action === 'delete') pdoDeleteTemplate(c.name);
       pdoTemplateConfirm = null;
-      pdoShowToast('Template updated');
+      pdoShowToast(psmT('toast_tpl_updated'));
       renderPdoPanel();
     });
   }
@@ -3240,7 +3625,7 @@
     pdoTemplateConfirm = {
       action: 'replace',
       name,
-      label: `Apply "${name}" — replace current folders?`,
+      label: psmT('confirm_tpl_apply', name),
     };
     renderPdoTemplatesPopover();
   }
@@ -3290,7 +3675,7 @@
       type: 'button',
       id: 'pdo-config-btn',
       class: 'menu_button menu_button_icon',
-      title: 'Prompt folders for current preset',
+      title: psmT('folders_shortcut_title'),
       html: '<i class="fa-fw fa-solid fa-folder-tree"></i>',
     });
     $btn.on('click', e => {
@@ -3328,6 +3713,9 @@
       eventOn(tavern_events.OAI_PRESET_CHANGED_AFTER, () => {
         pdoMassFolder = null;
         pdoTemplateConfirm = null;
+        const searchInput = parentDoc.querySelector('#pdo-search-input');
+        if (searchInput) searchInput.value = '';
+        pdoApplySearch('');
         if (pdoPanelOpen) renderPdoPanel();
         schedulePdoRepaint();
       });
@@ -3340,7 +3728,7 @@
     $(window).on('pagehide', () => {
       try { parentDoc._pdoObserver?.disconnect(); } catch (_) {}
       delete parentDoc._pdoObserver;
-      parent$('#pdo-config-btn, #pdo-panel, #' + PDO_STYLE_ID + ', #' + PDO_COLLAPSE_STYLE_ID, parentDoc).remove();
+      parent$('#pdo-config-btn, #pdo-panel, #pdo-search-bar, #' + PDO_STYLE_ID + ', #' + PDO_COLLAPSE_STYLE_ID, parentDoc).remove();
       parent$('.pdo-popup, .pdo-template-panel', parentDoc).remove();
     });
   

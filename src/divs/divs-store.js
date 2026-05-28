@@ -251,7 +251,7 @@ function pdoSaveTemplate(name) {
     assignmentsByName,
   };
   pdoDbSave(db, { repaint: false });
-  if (duplicate) pdoNotify('Template saved; duplicate prompt names used the later match');
+  if (duplicate) pdoNotify(psmT('notify_tpl_dup'));
   return true;
 }
 

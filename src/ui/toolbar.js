@@ -50,8 +50,8 @@ function injectExtensionMenu() {
     class:    'list-group-item flex-container flexGap5 interactable',
     tabindex: 0,
     role:     'listitem',
-    title:    'Preset State Manager',
-  }).html('<div class="fa-fw fa-solid fa-sliders extensionsMenuExtensionButton"></div><span>Preset State Manager</span>');
+    title:    psmT('brand'),
+  }).html('<div class="fa-fw fa-solid fa-sliders extensionsMenuExtensionButton"></div><span>' + esc(psmT('brand')) + '</span>');
   $container.append($item);
   parent$('#extensionsMenu', parentDoc).append($container);
   $item.on('click', () => {
@@ -75,7 +75,7 @@ function injectOpenaiRangePresetShortcut() {
     type:  'button',
     id:    'psm-openai-preset-shortcut-btn',
     class: 'menu_button menu_button_icon',
-    title: 'Snapshots for current preset',
+    title: psmT('snap_shortcut_title'),
     html:  '<i class="fa-fw fa-solid fa-layer-group"></i>',
   });
   $btn.on('click', e => {

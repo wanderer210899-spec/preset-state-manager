@@ -8,8 +8,8 @@ const PDO_GLYPHS = {
   close: '\u00D7',
   info: '\u24D8',
   search: String.fromCodePoint(0x1F50D),
-  eye: String.fromCodePoint(0x1F441),
-  eyeOff: String.fromCodePoint(0x1F648),
+  eye: String.fromCodePoint(0x1F441, 0xFE0E),
+  eyeOff: String.fromCodePoint(0x1F6AB,0xFE0E),
 };
 
 const PDO_ICON_PALETTE = [

@@ -213,6 +213,7 @@ function injectStyles({ bgFallback = null, borderFallback = null, mutedFallback 
       padding: ${sp(0.625)} ${sp(1.5)}; cursor: pointer; white-space: nowrap;
       display: flex; align-items: baseline; gap: ${sp(0.75)};
     }
+    .psm-fd-item:hover { background: oklch(from ${border} l c h / 0.18); }
 
     .psm-save-row { display: flex; gap: ${sp(0.75)}; margin-bottom: ${sp(1.25)}; }
     .psm-save-row input {

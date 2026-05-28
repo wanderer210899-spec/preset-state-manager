@@ -73,30 +73,30 @@ function pdoFolderRowHtml(presetName, cfg, folderId, prompts, counts) {
 
   const memberHtml = expanded ? `<div class="pdo-member-list" data-folder-members="${esc(folderId)}">${
     members.length ? members.map(prompt => `
-      <div class="pdo-member-line">
+      <div class="pdo-member-line" data-pdo-goto="${esc(prompt.id)}" role="button" tabindex="0" title="${esc(psmT('jump_to_prompt'))}">
         <span class="pdo-member-name">${esc(prompt.name)}</span>
-        ${pdoButtonHtml('pdo-row-btn pdo-unassign', `data-pdo-unassign="${esc(prompt.id)}"`, PDO_GLYPHS.remove, 'Remove from folder')}
+        ${pdoButtonHtml('pdo-row-btn pdo-unassign', `data-pdo-unassign="${esc(prompt.id)}"`, PDO_GLYPHS.remove, psmT('remove_from_folder'))}
       </div>
-    `).join('') : '<div class="pdo-member-line"><span class="pdo-member-name">No assigned prompts</span><span></span></div>'
+    `).join('') : `<div class="pdo-member-line"><span class="pdo-member-name">${esc(psmT('no_assigned'))}</span><span></span></div>`
   }</div>` : '';
 
   const iconPicker = pdoIconPickerFolder === folderId ? `
     <div class="pdo-icon-popover" data-icon-popover="${esc(folderId)}">
-      ${PDO_ICON_PALETTE.map(icon => pdoButtonHtml('pdo-row-btn pdo-icon-choice', `data-pdo-icon-choice="${esc(icon)}"`, esc(icon), 'Use icon')).join('')}
-      <input class="pdo-icon-custom" data-pdo-icon-custom="${esc(folderId)}" maxlength="8" placeholder="Custom icon" />
+      ${PDO_ICON_PALETTE.map(icon => pdoButtonHtml('pdo-row-btn pdo-icon-choice', `data-pdo-icon-choice="${esc(icon)}"`, esc(icon), psmT('use_icon'))).join('')}
+      <input class="pdo-icon-custom" data-pdo-icon-custom="${esc(folderId)}" maxlength="8" placeholder="${esc(psmT('custom_icon_ph'))}" />
     </div>` : '';
 
   return `<div class="pdo-folder-block" data-folder-id="${esc(folderId)}">
     <div class="pdo-folder-row">
-      <span class="pdo-drag-handle" title="Drag to reorder">${PDO_GLYPHS.drag}</span>
-      ${pdoButtonHtml('pdo-row-btn pdo-collapse-btn', `data-pdo-panel-expand="${esc(folderId)}"`, expanded ? PDO_GLYPHS.down : PDO_GLYPHS.right, expanded ? 'Hide folder prompts' : 'Show folder prompts')}
-      ${pdoButtonHtml('pdo-row-btn pdo-icon-btn', `data-pdo-icon="${esc(folderId)}"`, esc(folder.icon || PDO_DEFAULT_ICON), 'Change icon')}
+      <span class="pdo-drag-handle" title="${esc(psmT('drag_reorder'))}">${PDO_GLYPHS.drag}</span>
+      ${pdoButtonHtml('pdo-row-btn pdo-collapse-btn', `data-pdo-panel-expand="${esc(folderId)}"`, expanded ? PDO_GLYPHS.down : PDO_GLYPHS.right, expanded ? psmT('hide_folder_prompts') : psmT('show_folder_prompts'))}
+      ${pdoButtonHtml('pdo-row-btn pdo-icon-btn', `data-pdo-icon="${esc(folderId)}"`, esc(folder.icon || PDO_DEFAULT_ICON), psmT('change_icon'))}
       ${renaming
         ? `<input class="pdo-rename-input" data-pdo-rename="${esc(folderId)}" value="${esc(folder.name)}" />`
         : `<span class="pdo-folder-name" data-pdo-rename-start="${esc(folderId)}">${esc(folder.name)}</span>`}
-      <span class="pdo-count" title="Prompts in this folder">(${count})</span>
-      ${pdoButtonHtml('pdo-row-btn pdo-add-prompts', `data-pdo-mass="${esc(folderId)}"`, '+', 'Add prompts')}
-      ${pdoButtonHtml('pdo-row-btn pdo-folder-del' + (deleting ? ' confirming' : ''), `data-pdo-delete="${esc(folderId)}"`, deleting ? 'Sure? ' + PDO_GLYPHS.close : PDO_GLYPHS.close, 'Delete folder')}
+      <span class="pdo-count" title="${esc(psmT('prompts_in_folder'))}">(${count})</span>
+      ${pdoButtonHtml('pdo-row-btn pdo-add-prompts', `data-pdo-mass="${esc(folderId)}"`, '+', psmT('add_prompts'))}
+      ${pdoButtonHtml('pdo-row-btn pdo-folder-del' + (deleting ? ' confirming' : ''), `data-pdo-delete="${esc(folderId)}"`, deleting ? psmT('sure') + ' ' + PDO_GLYPHS.close : PDO_GLYPHS.close, psmT('delete_folder'))}
     </div>
     ${iconPicker}
     ${memberHtml}
@@ -112,26 +112,26 @@ function renderPdoPanel() {
   const counts = pdoFolderCounts(cfg, prompts);
   const folderHtml = cfg.folderOrder.length
     ? cfg.folderOrder.map(folderId => pdoFolderRowHtml(presetName, cfg, folderId, prompts, counts)).join('')
-    : '<div class="pdo-empty">No folders yet</div>';
+    : `<div class="pdo-empty">${esc(psmT('no_folders'))}</div>`;
 
   const hidden = pdoIsHidden();
   const hiddenBanner = hidden
-    ? '<div class="pdo-hidden-notice">Folders hidden — drag reorder enabled in prompt list</div>'
+    ? `<div class="pdo-hidden-notice">${esc(psmT('folders_hidden_banner'))}</div>`
     : '';
 
   panel.querySelector('#pdo-panel-inner').innerHTML = `
     <div class="pdo-header">
-      <span class="pdo-header-title">Prompt Folders &middot; ${esc(presetName)}</span>
-      ${pdoButtonHtml('pdo-ghost pdo-header-btn', 'id="pdo-hide-toggle"', hidden ? PDO_GLYPHS.eyeOff : PDO_GLYPHS.eye, hidden ? 'Show folders in prompt list' : 'Hide folders from prompt list')}
-      ${pdoButtonHtml('pdo-ghost pdo-header-btn', 'id="pdo-templates-btn"', PDO_GLYPHS.info, 'Templates')}
-      ${pdoButtonHtml('pdo-ghost pdo-header-btn', 'id="pdo-close"', PDO_GLYPHS.close, 'Close')}
+      <span class="pdo-header-title">${esc(psmT('folders_header', presetName))}</span>
+      ${pdoButtonHtml('pdo-ghost pdo-header-btn', 'id="pdo-hide-toggle"', hidden ? PDO_GLYPHS.eyeOff : PDO_GLYPHS.eye, hidden ? psmT('show_folders_in_list') : psmT('hide_folders_from_list'))}
+      ${pdoButtonHtml('pdo-ghost pdo-header-btn', 'id="pdo-templates-btn"', PDO_GLYPHS.info, psmT('templates'))}
+      ${pdoButtonHtml('pdo-ghost pdo-header-btn', 'id="pdo-close"', PDO_GLYPHS.close, psmT('close'))}
     </div>
     <div class="pdo-body">
       ${hiddenBanner}
       <div id="pdo-folder-list">${folderHtml}</div>
       <div class="pdo-add-folder">
-        <input id="pdo-new-folder-input" type="text" placeholder="New folder name..." />
-        <button id="pdo-new-folder-btn" type="button">Add</button>
+        <input id="pdo-new-folder-input" type="text" placeholder="${esc(psmT('new_folder_ph'))}" />
+        <button id="pdo-new-folder-btn" type="button">${esc(psmT('add'))}</button>
       </div>
     </div>`;
 
@@ -166,7 +166,7 @@ function bindPdoPanelEvents() {
     const name = input?.value.trim() || '';
     if (!name) { input?.focus(); return; }
     const id = pdoCreateFolder(currentPreset(), name);
-    if (!id) pdoShowToast('Folder name already exists');
+    if (!id) pdoShowToast(psmT('toast_folder_exists'));
   });
   $p.find('#pdo-new-folder-input').on('keydown', e => {
     if (e.key === 'Enter') $p.find('#pdo-new-folder-btn').trigger('click');
@@ -203,19 +203,29 @@ function bindPdoPanelEvents() {
     if (e.key === 'Enter') {
       e.preventDefault();
       const ok = pdoRenameFolder(currentPreset(), attr(this, 'pdo-rename'), $(this).val());
-      if (!ok) pdoShowToast('Folder name already exists');
+      if (!ok) pdoShowToast(psmT('toast_folder_exists'));
       pdoRenamingFolder = null;
     }
     if (e.key === 'Escape') { pdoRenamingFolder = null; renderPdoPanel(); }
   }).on('blur', function() {
     if (!pdoRenamingFolder) return;
     const ok = pdoRenameFolder(currentPreset(), attr(this, 'pdo-rename'), $(this).val());
-    if (!ok) pdoShowToast('Folder name already exists');
+    if (!ok) pdoShowToast(psmT('toast_folder_exists'));
     pdoRenamingFolder = null;
   }).on('click', e => e.stopPropagation());
 
-  $p.find('[data-pdo-unassign]').on('click', function() {
+  $p.find('[data-pdo-unassign]').on('click', function(e) {
+    e.stopPropagation();
     pdoUnassignPrompt(currentPreset(), attr(this, 'pdo-unassign'));
+  });
+  $p.find('[data-pdo-goto]').on('click', function(e) {
+    if (e.target.closest('.pdo-unassign')) return;
+    pdoGotoPrompt(attr(this, 'pdo-goto'));
+  });
+  $p.find('[data-pdo-goto]').on('keydown', function(e) {
+    if (e.key !== 'Enter' && e.key !== ' ') return;
+    e.preventDefault();
+    pdoGotoPrompt(attr(this, 'pdo-goto'));
   });
   $p.find('[data-pdo-mass]').on('click', function() {
     pdoMassFolder = attr(this, 'pdo-mass');
@@ -347,23 +357,23 @@ function renderPdoMassPopup() {
   popup.style.left = Math.max(12, pos.left) + 'px';
   popup.innerHTML = `
     <div class="pdo-popup-header">
-      <span class="pdo-popup-title">Add to &middot; ${esc(folder.icon)} ${esc(folder.name)}</span>
-      ${pdoButtonHtml('pdo-ghost pdo-header-btn', 'id="pdo-mass-close"', PDO_GLYPHS.close, 'Close')}
+      <span class="pdo-popup-title">${esc(psmT('add_to', folder.icon, folder.name))}</span>
+      ${pdoButtonHtml('pdo-ghost pdo-header-btn', 'id="pdo-mass-close"', PDO_GLYPHS.close, psmT('close'))}
     </div>
     <div class="pdo-popup-body">
-      <input class="pdo-popup-filter" id="pdo-mass-filter" value="${esc(pdoMassFilter)}" placeholder="${esc(PDO_GLYPHS.search)} filter..." />
+      <input class="pdo-popup-filter" id="pdo-mass-filter" value="${esc(pdoMassFilter)}" placeholder="${esc(psmT('mass_filter_ph'))}" />
       <div id="pdo-mass-list">${
         visible.length ? visible.map(prompt => `
           <label class="pdo-prompt-choice">
             <input type="checkbox" data-pdo-check="${esc(prompt.id)}"${pdoMassChecked.has(prompt.id) ? ' checked' : ''} />
             <span class="pdo-prompt-choice-name">${esc(prompt.name)}</span>
             ${prompt.marker ? '<span class="pdo-marker">marker</span>' : '<span></span>'}
-          </label>`).join('') : '<div class="pdo-empty">No unassigned prompts</div>'
+          </label>`).join('') : `<div class="pdo-empty">${esc(psmT('no_unassigned'))}</div>`
       }</div>
       <div class="pdo-popup-actions">
-        <button id="pdo-select-visible" type="button">Select all</button>
-        <button id="pdo-mass-add" type="button">Add</button>
-        <button id="pdo-mass-cancel" type="button">Cancel</button>
+        <button id="pdo-select-visible" type="button">${esc(psmT('select_all'))}</button>
+        <button id="pdo-mass-add" type="button">${esc(psmT('add'))}</button>
+        <button id="pdo-mass-cancel" type="button">${esc(psmT('cancel'))}</button>
       </div>
       </div>`;
   parentDoc.body.appendChild(popup);
@@ -411,32 +421,32 @@ function renderPdoTemplatesPopover() {
   const confirm = pdoTemplateConfirm ? `
     <div class="pdo-confirm-row">
       <span>${esc(pdoTemplateConfirm.label)}</span>
-      <button type="button" id="pdo-template-confirm-yes">Yes</button>
-      <button type="button" id="pdo-template-confirm-cancel">Cancel</button>
+      <button type="button" id="pdo-template-confirm-yes">${esc(psmT('yes'))}</button>
+      <button type="button" id="pdo-template-confirm-cancel">${esc(psmT('cancel'))}</button>
     </div>` : '';
 
   const opts = templates.map(name => `<option value="${esc(name)}">${esc(name)}</option>`).join('');
   panel.innerHTML = `
     <div class="pdo-popup-header">
-      <span class="pdo-popup-title">Templates</span>
-      ${pdoButtonHtml('pdo-ghost pdo-header-btn', 'id="pdo-template-close"', PDO_GLYPHS.close, 'Close')}
+      <span class="pdo-popup-title">${esc(psmT('templates'))}</span>
+      ${pdoButtonHtml('pdo-ghost pdo-header-btn', 'id="pdo-template-close"', PDO_GLYPHS.close, psmT('close'))}
     </div>
     <div class="pdo-template-body">
       ${confirm}
-      <label class="pdo-template-label">Save current preset</label>
+      <label class="pdo-template-label">${esc(psmT('tpl_save_current'))}</label>
       <div class="pdo-template-row">
-        <input id="pdo-template-save-name" value="${esc(pdoTemplateSaveName)}" placeholder="Name..." />
-        <button id="pdo-template-save" type="button">Save</button>
+        <input id="pdo-template-save-name" value="${esc(pdoTemplateSaveName)}" placeholder="${esc(psmT('name_ph'))}" />
+        <button id="pdo-template-save" type="button">${esc(psmT('save'))}</button>
       </div>
-      <label class="pdo-template-label">Apply template</label>
+      <label class="pdo-template-label">${esc(psmT('tpl_apply'))}</label>
       <div class="pdo-template-row">
         <select id="pdo-template-apply">${opts}</select>
-        <button id="pdo-template-replace" type="button">Apply</button>
+        <button id="pdo-template-replace" type="button">${esc(psmT('apply'))}</button>
       </div>
-      <label class="pdo-template-label">Delete template</label>
+      <label class="pdo-template-label">${esc(psmT('tpl_delete'))}</label>
       <div class="pdo-template-row">
         <select id="pdo-template-delete">${opts}</select>
-        <button id="pdo-template-delete-btn" type="button">Delete</button>
+        <button id="pdo-template-delete-btn" type="button">${esc(psmT('del'))}</button>
       </div>
     </div>`;
   parentDoc.body.appendChild(panel);
@@ -457,21 +467,21 @@ function renderPdoTemplatesPopover() {
     const name = (parent$('#pdo-template-save-name', panel).val() || '').trim();
     if (!name) return;
     if (pdoDbLoad().templates[name] && pdoTemplateConfirm?.action !== 'save') {
-      pdoTemplateConfirm = { action: 'save', name, label: `Overwrite "${name}"?` };
+      pdoTemplateConfirm = { action: 'save', name, label: psmT('confirm_tpl_overwrite', name) };
       renderPdoTemplatesPopover();
       return;
     }
     pdoSaveTemplate(name);
     pdoTemplateSaveName = '';
     pdoTemplateConfirm = null;
-    pdoShowToast('Template saved');
+    pdoShowToast(psmT('toast_tpl_saved'));
     renderPdoPanel();
   });
   parent$('#pdo-template-replace', panel).on('click', () => pdoAskTemplateApply());
   parent$('#pdo-template-delete-btn', panel).on('click', () => {
     const name = parent$('#pdo-template-delete', panel).val();
     if (!name) return;
-    pdoTemplateConfirm = { action: 'delete', name, label: `Delete "${name}"?` };
+    pdoTemplateConfirm = { action: 'delete', name, label: psmT('confirm_tpl_delete', name) };
     renderPdoTemplatesPopover();
   });
   parent$('#pdo-template-confirm-cancel', panel).on('click', () => {
@@ -485,7 +495,7 @@ function renderPdoTemplatesPopover() {
     if (c.action === 'replace') pdoApplyTemplate(c.name);
     if (c.action === 'delete') pdoDeleteTemplate(c.name);
     pdoTemplateConfirm = null;
-    pdoShowToast('Template updated');
+    pdoShowToast(psmT('toast_tpl_updated'));
     renderPdoPanel();
   });
 }
@@ -496,7 +506,7 @@ function pdoAskTemplateApply() {
   pdoTemplateConfirm = {
     action: 'replace',
     name,
-    label: `Apply "${name}" — replace current folders?`,
+    label: psmT('confirm_tpl_apply', name),
   };
   renderPdoTemplatesPopover();
 }
