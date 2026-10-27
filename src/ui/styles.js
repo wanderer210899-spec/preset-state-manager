@@ -1,379 +1,395 @@
-// ─── Scale config ─────────────────────────────────────────────────────────
-// Change PSM_SCALE.base to resize the entire UI. All sizes derive from it.
-const PSM_SCALE = {
-  base:    16,     // body/input font size in px — the one value to edit
-  body:    1,      // preset names, body text            → 16px
-  caption: 0.8125, // secondary text, notes, snap meta   → 13px
-  label:   0.75,   // folder/section labels (uppercase)  → 12px
-  iconSm:  1,      // small toolbar icons: ℹ ✕ ← +       → 16px
-  iconMd:  1.5,    // main ⚙ button icon                 → 24px
-  pad:     0.5,    // spacing unit                       → 8px
-};
-
 // ─── Styles ───────────────────────────────────────────────────────────────
+// One stylesheet for the PSM window, the entry row under the preset menu and
+// the bar above SillyTavern's prompt list. All colours come from the user's
+// SillyTavern theme (--SmartTheme*), so the UI follows theme changes live.
+// Two fixed colours stay the same in every theme: green #1D9E75, red #E24B4A.
+// --psm-ctl (v9) outlines controls. It mixes the theme's border colour with
+// its text colour, so buttons and switches keep an outline even on themes
+// whose border colour is nearly invisible.
+//
+// Sizes: the plain rules are the desktop (mouse) sizes from the design.
+// `.psm-touch` (phone sheet, or any touch screen) raises tap targets to 44px.
 
-function waitForThemeAndInjectStyles({ interval = 50, timeout = 5000 } = {}) {
-  const start = Date.now();
-  const cs    = () => window.parent.getComputedStyle(parentDoc.documentElement);
-
-  function attempt() {
-    const tint   = cs().getPropertyValue('--SmartThemeBlurTintColor').trim();
-    const border = cs().getPropertyValue('--SmartThemeBorderColor').trim();
-    const body   = cs().getPropertyValue('--SmartThemeBodyColor').trim();
-
-    if (tint && border && body) {
-      // All variables resolved — inject normally
-      injectStyles();
-    } else if (Date.now() - start < timeout) {
-      setTimeout(attempt, interval);
-    } else {
-      // Timed out — if ANY variable failed to resolve, force ALL three to safe
-      // black-and-white defaults. A partial resolve (e.g. bg resolves but text
-      // doesn't) risks invisible text like white-on-white, so it's all or nothing.
-      const anyFailed = !tint || !border || !body;
-      injectStyles(anyFailed ? {
-        bgFallback:     '#ffffff',
-        borderFallback: '#000000',
-        mutedFallback:  '#000000',
-      } : {});
-    }
-  }
-
-  attempt();
-}
-
-function injectStyles({ bgFallback = null, borderFallback = null, mutedFallback = null } = {}) {
+function injectStyles() {
   if (parent$('#' + STYLE_ID, parentDoc).length > 0) return;
 
-  const b    = PSM_SCALE.base;
-  const px   = k => `${Math.round(b * PSM_SCALE[k])}px`;
-  const sp   = n => `${Math.round(b * PSM_SCALE.pad * n)}px`;
-  const fluid = k => {
-    const hi = Math.round(b * PSM_SCALE[k]);
-    const lo = Math.max(14, Math.round(hi * 0.875));
-    if (lo === hi) return `${hi}px`;
-    const slope  = ((hi - lo) / 649 * 100).toFixed(2);
-    const offset = (lo - parseFloat(slope) / 100 * 375).toFixed(2);
-    return `clamp(${lo}px, ${slope}vw + ${offset}px, ${hi}px)`;
-  };
-
-  const bg     = bgFallback     ?? 'oklch(from var(--SmartThemeBlurTintColor) l c h / 1)';
-  const border = borderFallback ?? 'var(--SmartThemeBorderColor)';
-  const muted  = mutedFallback  ?? 'var(--SmartThemeBodyColor)';
   const bodyFont = window.parent.getComputedStyle(parentDoc.body).fontFamily || 'var(--mainFontFamily)';
+  const P = '#psm-panel';
+  const T = '#psm-panel.psm-touch';
 
   const css = `
-    #psm-panel {
-      position: fixed !important; z-index: 99998 !important;
-      width: min(320px, calc(100vw - 24px)) !important;
-      max-height: 80vh !important; overflow: hidden !important;
-      display: none !important; flex-direction: column !important;
-      background: ${bg} !important; border: 1px solid ${border} !important;
-      border-radius: 12px !important; padding: 0 !important;
-      font-size: ${fluid('body')} !important; color: ${muted} !important;
-      font-family: ${bodyFont} !important;
-      box-sizing: border-box !important;
+    /* ── Theme tokens ─────────────────────────────────────────────────── */
+    #psm-panel, #psm-entry-row, #pdo-search-bar {
+      --psm-bg: var(--SmartThemeBlurTintColor);
+      --psm-fg: var(--SmartThemeBodyColor);
+      --psm-bd: var(--SmartThemeBorderColor);
+      --psm-q: var(--SmartThemeQuoteColor);
+      --psm-shadow: var(--SmartThemeShadowColor);
+      --psm-green: #1D9E75;
+      --psm-red: #E24B4A;
     }
-    #psm-panel.open { display: flex !important; }
-    #psm-panel-inner {
-      flex: 1 1 auto !important; min-height: 0 !important;
-      overflow-y: auto !important; -webkit-overflow-scrolling: touch !important;
+    /* Panels are made fully solid so text stays readable on see-through themes. */
+    @supports (color: oklch(from red l c h / 1)) {
+      #psm-panel, #psm-entry-row, #pdo-search-bar {
+        --psm-bg: oklch(from var(--SmartThemeBlurTintColor) l c h / 1);
+      }
     }
-    #psm-panel button, #psm-panel input, #psm-panel select, #psm-panel textarea {
-      font-family: inherit !important; color: ${muted};
-    }
-    .psm-filter,
-    .psm-save-row input, .psm-save-row button,
-    .psm-snap-apply,
-    .psm-snap-del.confirming,
-    .psm-form-select, .psm-form-input, .psm-form-textarea,
-    .psm-new-folder-row input, .psm-new-folder-row button,
-    .psm-btn-row button, .psm-data-row button {
-      border: 1px solid ${border}; background: ${bg}; color: ${muted};
+    #psm-panel, #psm-entry-row, #pdo-search-bar {
+      --psm-ctl: color-mix(in oklab, var(--psm-bd) 55%, var(--psm-fg));
+      --psm-muted: color-mix(in oklab, var(--psm-fg) 70%, var(--psm-bg));
+      --psm-hair: color-mix(in oklab, var(--psm-ctl) 35%, var(--psm-bg));
+      --psm-hover: color-mix(in oklab, var(--psm-fg) 7%, var(--psm-bg));
+      --psm-on: color-mix(in oklab, var(--psm-fg) 11%, var(--psm-bg));
     }
 
-    .psm-header {
-      display: flex; align-items: center; gap: ${sp(0.75)};
-      padding: ${sp(1.25)} ${sp(1.5)}; border-bottom: 1px solid ${border};
-      position: sticky; top: 0; background: ${bg}; z-index: 1;
-      cursor: move;
+    /* ── Shared atoms (panel, entry row, prompt-list bar) ──────────────────── */
+    .psm-i { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2;
+      stroke-linecap: round; stroke-linejoin: round; flex-shrink: 0; display: block; }
+    .psm-i.f { fill: currentColor; stroke: none; }
+    .psm-i.mut { color: var(--psm-muted); }
+    .psm-i.hide { visibility: hidden; }
+    .psm-btn {
+      display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+      height: 32px; padding: 0 12px; margin: 0; border: 1px solid var(--psm-ctl); border-radius: 6px;
+      background: var(--psm-bg); color: var(--psm-fg); font-family: inherit; font-size: 13px; line-height: 1.2;
+      cursor: pointer; white-space: nowrap; flex-shrink: 0; box-sizing: border-box; min-width: 0;
     }
-    .psm-header button { cursor: pointer; }
-    .psm-header-title {
-      flex: 1; font-size: ${px('label')}; font-weight: 600;
-      text-transform: uppercase; letter-spacing: .07em;
-      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    .psm-btn:disabled { opacity: .45; cursor: not-allowed; }
+    .psm-btn.psm-go { border-color: var(--psm-green); background: color-mix(in oklab, var(--psm-green) 16%, var(--psm-bg)); font-weight: 600; }
+    .psm-btn.psm-go .psm-i { color: var(--psm-green); }
+    .psm-btn.psm-danger { border-color: var(--psm-red); background: color-mix(in oklab, var(--psm-red) 13%, var(--psm-bg)); font-weight: 600; }
+    .psm-btn.psm-danger .psm-i, .psm-btn.psm-danger-o .psm-i { color: var(--psm-red); }
+    .psm-btn.psm-danger-o { border-color: var(--psm-red); }
+    .psm-btn.psm-quiet { border-color: transparent; background: none; }
+    .psm-btn.psm-sm { height: 28px; padding: 0 10px; }
+    .psm-btn.psm-wide { flex: 1; }
+    .psm-btn.psm-full { width: 100%; }
+    .psm-btn.psm-busy { cursor: default; }
+    .psm-ib {
+      width: 32px; height: 32px; display: inline-grid; place-items: center; margin: 0; padding: 0;
+      border: none; border-radius: 6px; background: none; color: var(--psm-fg); cursor: pointer; flex-shrink: 0;
     }
-    .psm-ghost { background: none; border: none; cursor: pointer; }
-    .psm-header-btn {
-      font-size: ${px('iconSm')}; padding: ${sp(0.25)} ${sp(0.625)}; border-radius: 4px; line-height: 1; flex-shrink: 0;
-    }
-    .psm-active-link { max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: ${px('caption')} !important; }
-
-    .psm-body { padding: ${sp(1.25)} ${sp(1.5)}; }
-
-    .psm-filter {
-      width: 100%; box-sizing: border-box; border-radius: 6px;
-      padding: ${sp(0.625)} ${sp(1.125)}; font-size: ${fluid('body')} !important;
-      outline: none; margin-bottom: ${sp(1)}; display: block;
-    }
-
-    .psm-folder-row {
-      display: flex; align-items: center; gap: 0;
-      padding: 0 0; cursor: pointer; user-select: none;
-      overflow: hidden; position: relative;
-    }
-    /* ── Folder row inner layout (swipe-to-reveal) ─────────────── */
-    .psm-folder-row-content {
-      display: flex; width: 100%;
-      transform: translateX(0); transition: transform 0.18s ease;
-      will-change: transform;
-    }
-    .psm-folder-row.swipe-open .psm-folder-row-content { transform: translateX(-175px); }
-    .psm-folder-main {
-      flex-shrink: 0; width: 100%;
-      display: flex; align-items: center; gap: ${sp(0.625)};
-      padding: ${sp(1)} ${sp(0.25)};
-    }
-    .psm-folder-swipe-actions {
-      flex-shrink: 0; width: 175px;
-      display: flex; align-items: center; gap: ${sp(0.375)}; padding: 0 ${sp(0.75)};
-      border-left: 1px solid ${border};
-    }
-    .psm-folder-swipe-actions button { flex: 1; padding: ${sp(0.375)} 0; border-radius: 4px;
-      font-size: ${px('caption')} !important; cursor: pointer; white-space: nowrap; }
-    .psm-folder-add, .psm-folder-rename-btn { background: none !important; border: 1px solid ${border} !important; }
-    .psm-folder-del.swipe { background: none !important; border: 1px solid #E24B4A !important; color: #E24B4A !important; }
-
+    .psm-ib.psm-sm { width: 28px; height: 28px; }
+    .psm-ib.mut { color: var(--psm-muted); }
+    .psm-ib.psm-on { background: var(--psm-on); color: var(--psm-fg); }
+    .psm-ib:disabled { opacity: .4; cursor: not-allowed; }
     @media (hover: hover) {
-      .psm-folder-row { overflow: visible; }
-      .psm-folder-swipe-actions {
-        position: absolute; right: 0; top: 0; bottom: 0; width: auto;
-        background: ${bg}; border-left: 1px solid ${border};
-        opacity: 0; pointer-events: none;
-        transition: opacity 0.1s 0s;
-      }
-      .psm-folder-row:hover:not(.dragging) .psm-folder-swipe-actions {
-        opacity: 1; pointer-events: auto;
-        transition: opacity 0.15s 0.4s;
-      }
+      .psm-btn:not(:disabled):hover, .psm-ib:not(:disabled):hover { background: var(--psm-hover); }
+      .psm-btn.psm-go:not(:disabled):hover { background: color-mix(in oklab, var(--psm-green) 24%, var(--psm-bg)); }
+      .psm-btn.psm-danger:not(:disabled):hover { background: color-mix(in oklab, var(--psm-red) 20%, var(--psm-bg)); }
+      .psm-ib.mut:not(:disabled):hover { color: var(--psm-fg); }
     }
+    .psm-inp {
+      height: 36px; padding: 0 10px; margin: 0; border: 1px solid var(--psm-ctl); border-radius: 6px;
+      background: var(--psm-bg); color: var(--psm-fg); font-family: inherit; font-size: 16px;
+      min-width: 0; width: 100%; outline: none; box-sizing: border-box; box-shadow: none;
+    }
+    .psm-inp::placeholder { color: var(--psm-muted); opacity: 1; }
+    .psm-inp:focus { border-color: var(--psm-q); box-shadow: 0 0 0 2px color-mix(in oklab, var(--psm-q) 35%, transparent); }
+    .psm-srch { position: relative; display: flex; align-items: center; flex: 1; min-width: 0; }
+    .psm-srch > .psm-i { position: absolute; left: 10px; color: var(--psm-muted); pointer-events: none; }
+    .psm-srch .psm-inp { padding-left: 34px; padding-right: 36px; }
+    .psm-srch .psm-ib { position: absolute; right: 4px; }
+    .psm-row { display: flex; align-items: center; gap: 8px; min-width: 0; }
+    .psm-cap { font-size: 13px; color: var(--psm-muted); margin: 0; }
+    .psm-nm { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: left; }
 
-    .psm-folder-arrow { font-size: ${px('label')}; width: ${px('label')}; flex-shrink: 0; }
-    .psm-folder-label {
-      flex: 1; font-size: ${px('label')}; font-weight: 600;
-      text-transform: uppercase; letter-spacing: .06em;
-      min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    /* ── Entry row under the preset dropdown (its own row) ──────────────── */
+    #psm-entry-row {
+      display: flex; gap: 8px; width: 100%; box-sizing: border-box;
+      padding: 6px 0 2px; margin: 0; font-family: ${bodyFont}; contain: inline-size;
     }
-    .psm-folder-rename-input {
-      flex: 1; background: ${bg}; border: none; border-bottom: 1px solid ${border};
-      outline: none; padding: 0; min-width: 0;
-      font-size: ${px('label')}; font-weight: 600;
-      text-transform: uppercase; letter-spacing: .06em;
-    }
+    #psm-entry-row[hidden] { display: none !important; }
+    #psm-entry-row .psm-btn { flex: 1 1 0; height: 34px; font-size: 13px; background: transparent; }
+    #psm-entry-row .psm-btn span { overflow: hidden; text-overflow: ellipsis; }
+    @media (pointer: coarse) { #psm-entry-row .psm-btn { height: 44px; font-size: 14px; } }
 
-    .psm-preset-row {
-      display: flex; align-items: center; gap: ${sp(0.5)};
-      padding: ${sp(0.875)} 0 ${sp(0.875)} ${sp(1.75)};
+    /* ── Window ───────────────────────────────────────────────────────── */
+    ${P} {
+      position: fixed !important; z-index: 99998 !important; display: none !important;
+      flex-direction: column !important; box-sizing: border-box !important;
+      background: var(--psm-bg) !important; color: var(--psm-fg) !important;
+      border: 1px solid var(--psm-bd) !important; padding: 0 !important; margin: 0 !important;
+      overflow: hidden !important; font-family: ${bodyFont} !important;
+      font-size: 16px; line-height: 1.4; text-align: left;
+    }
+    ${P}.open { display: flex !important; }
+    ${P}:focus { outline: none !important; }
+    ${P} *, #psm-entry-row *, #pdo-search-bar * { box-sizing: border-box; }
+    ${P} button, ${P} input, ${P} textarea { font-family: inherit; }
+    ${P} p { margin: 0; }
+    /* Desktop: width, height and place are set by toolbar.js (move + resize). */
+    ${P}.psm-float {
+      border-radius: 12px; box-shadow: 0 10px 32px var(--psm-shadow) !important;
+    }
+    ${P} .psm-rsz {
+      position: absolute; right: 1px; bottom: 1px; width: 18px; height: 18px; z-index: 30;
+      cursor: nwse-resize; touch-action: none; opacity: .7; border-bottom-right-radius: 11px;
+      background: linear-gradient(135deg, transparent 52%, var(--psm-ctl) 52%, var(--psm-ctl) 60%, transparent 60%, transparent 72%, var(--psm-ctl) 72%, var(--psm-ctl) 80%, transparent 80%);
+    }
+    ${P}.psm-sheet .psm-rsz { display: none; }
+    /* Phone: a sheet whose height the user sets with the handle (toolbar.js). */
+    ${P}.psm-sheet {
+      left: 0 !important; right: 0 !important; bottom: auto !important; width: auto !important;
+      border-radius: 16px 16px 0 0; border-bottom: none !important;
+      box-shadow: 0 -6px 28px var(--psm-shadow) !important;
+      transition: top .2s ease, height .2s ease;
+    }
+    ${P}.psm-sheet.psm-sheet-drag { transition: none; }
+    .psm-grabz { display: none; place-items: center; width: 100%; height: 24px; margin: 0; padding: 0; border: none; background: none; cursor: ns-resize; touch-action: none; flex-shrink: 0; }
+    ${P}.psm-sheet .psm-grabz { display: grid; }
+    .psm-grab { width: 44px; height: 5px; border-radius: 3px; background: var(--psm-ctl); opacity: .55; }
+    /* While the sheet is open over the AI settings drawer, the drawer can
+       scroll its content up above the sheet. */
+    body.psm-sheet-pad #left-nav-panel .scrollableInner { padding-bottom: var(--psm-sheet-pad, 0px) !important; }
+
+    /* Header */
+    ${P} .psm-h { display: flex; align-items: center; gap: 2px; padding: 6px 4px 6px 2px; border-bottom: 1px solid var(--psm-hair); flex-shrink: 0; }
+    ${P}.psm-float .psm-h { cursor: move; touch-action: none; }
+    ${P}.psm-float .psm-h button { cursor: pointer; }
+    ${P} .psm-drag { width: 20px; height: 32px; display: grid; place-items: center; color: var(--psm-muted); flex-shrink: 0; }
+    ${P}.psm-sheet .psm-drag { display: none; }
+    ${P} .psm-tabs { display: flex; gap: 2px; flex: 1; min-width: 0; overflow: hidden; }
+    ${P} .psm-tab:first-child { flex-shrink: 0; }
+    ${P} .psm-tab {
+      display: inline-flex; align-items: center; gap: 5px; height: 32px; padding: 0 7px; margin: 0; min-width: 0;
+      border: none; border-radius: 6px; background: none; font-size: 13px; font-weight: 600;
+      color: var(--psm-muted); cursor: pointer; white-space: nowrap;
+    }
+    ${P} .psm-tab span { overflow: hidden; text-overflow: ellipsis; }
+    ${P} .psm-tab.psm-on { background: var(--psm-on); color: var(--psm-fg); }
+    @media (hover: hover) { ${P} .psm-tab:hover { background: var(--psm-hover); color: var(--psm-fg); } }
+    ${P} .psm-title { flex: 1; min-width: 0; font-size: 13px; font-weight: 600; padding-left: 8px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+    /* Status strip */
+    ${P} .psm-strip { display: flex; align-items: center; gap: 8px; padding: 6px 6px 6px 12px; font-size: 13px; border-bottom: 1px solid var(--psm-hair); flex-shrink: 0; min-height: 40px; }
+    ${P} .psm-strip-t { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+    ${P} .psm-strip.busy { background: color-mix(in oklab, var(--psm-q) 11%, var(--psm-bg)); }
+    ${P} .psm-strip.ok { background: color-mix(in oklab, var(--psm-green) 13%, var(--psm-bg)); }
+    ${P} .psm-strip.ok .psm-i { color: var(--psm-green); }
+    ${P} .psm-strip.err { background: color-mix(in oklab, var(--psm-red) 13%, var(--psm-bg)); }
+    ${P} .psm-strip.err .psm-i.st { color: var(--psm-red); }
+    ${P} .psm-strip.info { background: var(--psm-hover); }
+    .psm-spin { width: 14px; height: 14px; border-radius: 50%; border: 2px solid var(--psm-hair); border-top-color: var(--psm-q); animation: psmspin .8s linear infinite; flex-shrink: 0; }
+    @keyframes psmspin { to { transform: rotate(360deg); } }
+
+    /* Body */
+    ${P} .psm-main { position: relative; flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
+    ${P} .psm-body {
+      flex: 1 1 auto; min-height: 0; overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain;
+      -webkit-overflow-scrolling: touch; padding: 12px; display: flex; flex-direction: column; gap: 12px;
       user-select: none; -webkit-user-select: none;
     }
-    .psm-preset-row.ungrouped { padding-left: ${sp(0.25)}; }
-    .psm-active-dot { width: 5px; height: 5px; border-radius: 50%; background: #1D9E75; flex-shrink: 0; }
-    .psm-inactive-spacer { width: 5px; flex-shrink: 0; }
-    .psm-preset-name-btn {
-      flex: 1; font-size: ${fluid('body')} !important; text-align: left;
-      padding: ${sp(0.25)} ${sp(0.625)}; border-radius: 4px;
-      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-    }
-    .psm-info-btn {
-      font-size: ${px('iconSm')}; padding: ${sp(0.375)} ${sp(0.75)}; border-radius: 3px; flex-shrink: 0;
-      min-width: ${px('iconSm')}; text-align: center;
-    }
+    ${P}.psm-sheet .psm-body { padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px)); }
+    ${P} input, ${P} textarea { user-select: text; -webkit-user-select: text; }
+    ${P} .psm-sec { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+    ${P} .psm-hr { border: none; border-top: 1px solid var(--psm-hair); margin: 0; width: 100%; height: 0; background: none; }
+    ${P} .psm-lbl { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: .07em; color: var(--psm-muted); margin: 0; }
+    ${P} .psm-tag { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; padding: 1px 6px; border-radius: 4px; border: 1px solid var(--psm-hair); color: var(--psm-muted); white-space: nowrap; flex-shrink: 0; max-width: 130px; overflow: hidden; text-overflow: ellipsis; }
+    ${P} .psm-tag > span { overflow: hidden; text-overflow: ellipsis; }
+    ${P} .psm-tag.q { border-color: var(--psm-q); color: var(--psm-fg); }
+    ${P} .psm-tag .psm-i { width: 12px; height: 12px; }
+    ${P} .psm-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--psm-green); flex-shrink: 0; }
+    ${P} .psm-dot.off { background: transparent; }
+    ${P} .psm-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+    ${P} .psm-act { flex: 1; min-width: 0; justify-content: flex-start; padding: 0 8px; }
+    ${P} .psm-crumb { display: flex; align-items: flex-start; gap: 4px; margin: -4px 0 0 -6px; }
+    ${P} .psm-crumb h3 { margin: 5px 0 0; font-size: 16px; font-weight: 600; line-height: 1.35; overflow-wrap: anywhere; flex: 1; min-width: 0; color: var(--psm-fg); }
 
-    .psm-note-inline {
-      padding: ${sp(0.375)} ${sp(0.75)} ${sp(0.625)} ${sp(2.5)};
-      font-size: ${px('caption')}; white-space: pre-wrap; word-break: break-word;
-      border-left: 2px solid ${border}; margin: 1px 0 ${sp(0.5)} ${sp(1.75)};
+    /* Folder and preset rows */
+    ${P} .psm-fl { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+    ${P} .psm-fblock { position: relative; display: flex; flex-direction: column; min-width: 0; }
+    ${P} .psm-frow, ${P} .psm-prow { position: relative; display: flex; align-items: center; gap: 2px; min-height: 40px; border-radius: 6px; min-width: 0; }
+    @media (hover: hover) { ${P} .psm-frow:hover, ${P} .psm-prow:hover, ${P} .psm-pfr:hover { background: var(--psm-hover); } }
+    ${P} .psm-grip { width: 18px; align-self: stretch; display: grid; place-items: center; color: var(--psm-muted); cursor: grab; flex-shrink: 0; touch-action: none; }
+    ${P} .psm-grip .psm-i { width: 14px; height: 14px; }
+    ${P} .psm-fbtn, ${P} .psm-pbtn {
+      flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px; height: 40px; padding: 0 4px; margin: 0;
+      border: none; background: none; color: var(--psm-fg); cursor: pointer; text-align: left; font-size: 16px;
     }
-    .psm-note-inline.ungrouped { margin-left: ${sp(0.25)}; }
-    .psm-edit-link {
-      text-decoration: underline;
-      font-size: ${px('caption')}; margin-left: ${sp(0.5)}; padding: 1px ${sp(0.5)}; border-radius: 3px;
+    ${P} .psm-chev { color: var(--psm-muted); transition: transform .15s; }
+    ${P} .psm-chev.open { transform: rotate(90deg); }
+    ${P} .psm-fname { flex: 1; min-width: 0; font-size: 14px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    ${P} .psm-cnt { font-size: 13px; color: var(--psm-muted); font-variant-numeric: tabular-nums; flex-shrink: 0; padding-right: 4px; }
+    ${P} .psm-frow.tgt { background: color-mix(in oklab, var(--psm-q) 14%, var(--psm-bg)); }
+    ${P} .psm-prow.sel { gap: 10px; padding: 0 6px; cursor: pointer; font-size: 16px; margin: 0; }
+    /* Tick boxes drawn here: SillyTavern restyles every checkbox (filled with
+       the text colour), which reads as solid black on light themes. */
+    ${P} .psm-prow.sel input, ${P} .psm-pk-r input {
+      -webkit-appearance: none; appearance: none; display: grid; place-items: center; position: relative;
+      width: 16px; height: 16px; margin: 0; padding: 0; flex-shrink: 0; transform: none; overflow: hidden;
+      border: 1.5px solid var(--psm-ctl); border-radius: 3px; outline: none; box-shadow: none;
+      background: var(--psm-bg); cursor: pointer;
     }
+    ${P} .psm-prow.sel input::before, ${P} .psm-pk-r input::before {
+      content: ""; width: 10px; height: 10px; transform: scale(0); transition: transform .1s; box-shadow: inset 1em 1em #fff;
+      clip-path: polygon(14% 44%, 0 65%, 50% 100%, 100% 16%, 80% 0%, 43% 62%);
+    }
+    ${P} .psm-prow.sel input:checked, ${P} .psm-pk-r input:checked { background: var(--psm-green); border-color: var(--psm-green); }
+    ${P} .psm-prow.sel input:checked::before, ${P} .psm-pk-r input:checked::before { transform: scale(1); }
+    ${P} .psm-prow.sel input:disabled, ${P} .psm-pk-r input:disabled { opacity: .45; cursor: default; }
+    ${P} .psm-prow.sel input:focus-visible, ${P} .psm-pk-r input:focus-visible { outline: 2px solid var(--psm-q); outline-offset: 1px; }
+    ${P} .psm-kids { display: flex; flex-direction: column; gap: 2px; margin-left: 18px; padding: 2px 0 6px 8px; border-left: 1px solid var(--psm-hair); min-width: 0; }
+    ${P} .psm-plist { display: flex; flex-direction: column; gap: 2px; min-width: 0; min-height: 0; }
+    ${P} .psm-pitem { display: flex; flex-direction: column; min-width: 0; }
+    ${P} .psm-note { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; margin: 0 0 6px 26px; padding: 8px 10px; font-size: 13px; border-radius: 6px; background: var(--psm-hover); min-width: 0; }
+    ${P} .psm-note span, ${P} .psm-notetext { white-space: pre-wrap; overflow-wrap: anywhere; }
+    ${P} .psm-notetext { margin: 0; font-size: 13px; }
+    ${P} .psm-link { border: none; background: none; padding: 0; margin: 0; font-size: 13px; text-decoration: underline; cursor: pointer; color: var(--psm-fg); }
+    ${P} .psm-addrow {
+      display: flex; align-items: center; gap: 8px; height: 36px; padding: 0 8px; margin: 2px 0 0; width: 100%;
+      border: 1px dashed var(--psm-hair); border-radius: 6px; background: none; color: var(--psm-muted);
+      font-size: 13px; cursor: pointer; text-align: left;
+    }
+    @media (hover: hover) { ${P} .psm-addrow:hover { color: var(--psm-fg); border-color: var(--psm-ctl); } }
+    ${P} .psm-ug-lbl { padding: 6px 4px 2px; }
 
-    .psm-folder-dropdown {
-      position: fixed; z-index: 999999;
-      background: ${bg}; border: 1px solid ${border}; color: ${muted};
-      font-family: var(--mainFontFamily);
-      border-radius: 8px; padding: ${sp(0.5)} 0; min-width: 180px;
-      max-width: calc(100vw - 16px);
-      font-size: ${fluid('body')}; max-height: 200px; overflow-y: auto;
-    }
-    .psm-fd-item {
-      padding: ${sp(0.625)} ${sp(1.5)}; cursor: pointer; white-space: nowrap;
-      display: flex; align-items: baseline; gap: ${sp(0.75)};
-    }
-    .psm-fd-item:hover { background: oklch(from ${border} l c h / 0.18); }
+    /* Drag and drop */
+    ${P} .psm-sortable-ghost { opacity: .35; }
+    ${P} .psm-sortable-chosen { background: var(--psm-hover); }
+    /* A closed folder accepts drops on its own row, so nothing shifts when a drag starts. */
+    ${P} .psm-plist.psm-closed { position: absolute; left: 0; right: 0; top: 0; height: 40px; overflow: hidden; opacity: 0; pointer-events: none; z-index: 1; }
+    ${P}.psm-dragging-p .psm-plist.psm-closed { pointer-events: auto; }
+    /* The touch drag copy must never catch the finger (it holds a closed list too). */
+    ${P} .sortable-fallback, ${P} .sortable-fallback * { pointer-events: none !important; }
+    ${P} .psm-drag-spacer { pointer-events: none; }
+    ${P} .psm-fblock.psm-drag-over > .psm-frow { background: var(--psm-on); outline: 1px solid var(--psm-q); outline-offset: -1px; }
+    ${P} .psm-ug-zone { display: none; }
+    ${P}.psm-dragging-p .psm-ug-zone { display: block; }
+    ${P}.psm-dragging-p .psm-plist[data-folder=""] { min-height: 40px; border: 1px dashed var(--psm-hair); border-radius: 6px; }
 
-    .psm-save-row { display: flex; gap: ${sp(0.75)}; margin-bottom: ${sp(1.25)}; }
-    .psm-save-row input {
-      flex: 1; border-radius: 6px; outline: none; min-width: 0;
-      padding: ${sp(0.625)} ${sp(1.125)}; font-size: ${fluid('body')} !important;
+    /* Menus */
+    ${P} .psm-menu {
+      position: absolute; right: 0; top: calc(100% - 2px); z-index: 12; min-width: 200px; max-width: 100%;
+      padding: 4px; background: var(--psm-bg); border: 1px solid var(--psm-ctl); border-radius: 8px;
+      box-shadow: 0 8px 24px var(--psm-shadow); display: flex; flex-direction: column;
     }
-    .psm-save-row button {
-      padding: ${sp(0.625)} ${sp(1.625)}; border-radius: 6px; cursor: pointer;
-      font-size: ${fluid('body')} !important; white-space: nowrap;
+    ${P} .psm-menu.full { left: 0; right: 0; min-width: 0; }
+    ${P} .psm-mi {
+      display: flex; align-items: center; gap: 10px; height: 36px; padding: 0 10px; margin: 0; min-width: 0;
+      border: none; border-radius: 6px; background: none; color: var(--psm-fg); font-size: 14px;
+      cursor: pointer; text-align: left; white-space: nowrap;
     }
+    ${P} .psm-mi > span { overflow: hidden; text-overflow: ellipsis; }
+    @media (hover: hover) { ${P} .psm-mi:hover { background: var(--psm-hover); } }
+    ${P} .psm-mi .psm-i { color: var(--psm-muted); }
+    ${P} .psm-mi.red .psm-i { color: var(--psm-red); }
+    ${P} .psm-fldw { position: relative; }
+    ${P} .psm-fsel { width: 100%; justify-content: flex-start; height: 36px; font-size: 14px; }
 
-    .psm-empty {
-      text-align: center; font-size: ${px('caption')}; padding: ${sp(1.25)};
-      border: 1px dashed ${border}; border-radius: 6px;
-    }
+    /* Inline confirm boxes */
+    ${P} .psm-cf { display: flex; flex-direction: column; gap: 8px; padding: 10px; border: 1px solid var(--psm-ctl); border-radius: 8px; background: color-mix(in oklab, var(--psm-fg) 4%, var(--psm-bg)); min-width: 0; }
+    ${P} .psm-cf.red { border-color: var(--psm-red); }
+    ${P} .psm-cf-t { margin: 0; font-size: 14px; font-weight: 600; overflow-wrap: anywhere; }
+    ${P} .psm-cf .psm-cap { overflow-wrap: anywhere; }
+    ${P} .psm-cf-b { display: flex; gap: 8px; justify-content: flex-end; flex-wrap: wrap; }
+    ${P} .psm-empty { display: flex; flex-direction: column; align-items: center; gap: 10px; text-align: center; padding: 16px 12px; border: 1px dashed var(--psm-hair); border-radius: 8px; }
 
-    .psm-snap {
-      display: flex; align-items: center; gap: ${sp(0.625)};
-      padding: ${sp(0.625)} ${sp(1)};
-      border: 1px solid ${border}; border-radius: 6px; margin-bottom: ${sp(0.5)};
-    }
-    .psm-snap:last-child { margin-bottom: 0; }
-    .psm-snap--active {
-      border-color: var(--SmartThemeQuoteColor);
-      background: oklch(from var(--SmartThemeQuoteColor, #888) l c h / 0.08);
-    }
-    .psm-snap-name { flex: 1; min-width: 0; font-size: ${fluid('body')} !important; word-break: break-all; cursor: pointer; }
-    .psm-snap-meta { font-size: ${px('caption')}; white-space: nowrap; flex-shrink: 0; }
-    .psm-snap-apply {
-      padding: ${sp(0.25)} ${sp(1)}; border-radius: 4px; cursor: pointer;
-      font-size: ${px('caption')}; white-space: nowrap; flex-shrink: 0;
-    }
-    .psm-snap-apply.confirming { border-color: #1D9E75; color: #1D9E75; }
-    .psm-snap-cancel {
-      padding: ${sp(0.25)} ${sp(0.625)}; border-radius: 4px;
-      font-size: ${px('caption')}; white-space: nowrap; flex-shrink: 0;
-    }
-    .psm-snap-cancel:hover { color: #E24B4A; }
-    .psm-snap-del {
-      font-size: ${px('caption')}; padding: ${sp(0.25)} ${sp(0.5)}; border-radius: 3px; line-height: 1; flex-shrink: 0;
-    }
-    .psm-snap-del:hover { color: #E24B4A; }
-    .psm-snap-del.confirming {
-      padding: ${sp(0.25)} ${sp(1)}; border-radius: 4px;
-      border-color: #E24B4A; color: #E24B4A; white-space: nowrap;
-    }
+    /* Snapshot cards */
+    ${P} .psm-snaps { display: flex; flex-direction: column; gap: 8px; }
+    ${P} .psm-snap { position: relative; display: flex; flex-direction: column; gap: 8px; padding: 8px 8px 8px 12px; border: 1px solid var(--psm-hair); border-radius: 6px; min-width: 0; background: color-mix(in oklab, var(--psm-fg) 3%, var(--psm-bg)); }
+    ${P} .psm-snap.cur { border-color: var(--psm-q); background: color-mix(in oklab, var(--psm-q) 9%, var(--psm-bg)); }
+    ${P} .psm-snap-top { display: flex; align-items: center; gap: 6px; min-width: 0; }
+    ${P} .psm-snap-txt { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+    ${P} .psm-snap-name { font-size: 16px; line-height: 1.3; overflow-wrap: break-word; word-break: normal; }
+    ${P} .psm-snap .psm-menu { top: 44px; right: 6px; }
+    ${P} .psm-wk { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--psm-muted); height: 32px; padding: 0 4px; flex-shrink: 0; }
 
-    .psm-divider { border: none; border-top: 1px solid ${border}; margin: ${sp(1)} 0; }
+    /* Prompt states */
+    ${P} .psm-disc { display: flex; align-items: center; gap: 8px; height: 36px; padding: 0; margin: 0; border: none; background: none; color: var(--psm-fg); cursor: pointer; width: 100%; text-align: left; }
+    ${P} .psm-pst { display: flex; flex-direction: column; gap: 2px; }
+    ${P} .psm-pst-r { display: flex; align-items: center; gap: 8px; font-size: 13px; min-height: 22px; overflow-wrap: anywhere; }
+    ${P} .psm-sd { width: 6px; height: 6px; border-radius: 50%; background: var(--psm-green); flex-shrink: 0; }
+    ${P} .psm-sd.off { background: transparent; box-shadow: inset 0 0 0 1.5px var(--psm-ctl); }
 
-    details.psm-details summary {
-      cursor: pointer; font-size: ${px('label')};
-      text-transform: uppercase; letter-spacing: .07em;
-      padding: ${sp(0.5)} 0; list-style: none;
-      display: flex; align-items: center; gap: ${sp(0.625)};
-    }
-    details.psm-details summary::before { content: '▶'; font-size: ${px('label')}; }
-    details.psm-details[open] summary::before { content: '▼'; }
-    details.psm-details summary::-webkit-details-marker { display: none; }
+    /* Switch rows */
+    ${P} .psm-swr { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 36px; padding: 4px 0; margin: 0; border: none; background: none; color: var(--psm-fg); cursor: pointer; text-align: left; font-size: 14px; }
+    ${P} .psm-swr:disabled { cursor: not-allowed; opacity: .55; }
+    ${P} .psm-swr-t { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+    ${P} .psm-sw { width: 36px; height: 20px; border-radius: 10px; border: 1.5px solid var(--psm-ctl); background: color-mix(in oklab, var(--psm-fg) 9%, var(--psm-bg)); position: relative; flex-shrink: 0; }
+    ${P} .psm-sw::after { content: ""; position: absolute; top: 2px; left: 2px; width: 13px; height: 13px; border-radius: 50%; background: var(--psm-ctl); transition: transform .15s; }
+    ${P} .psm-sw.on { background: color-mix(in oklab, var(--psm-green) 30%, var(--psm-bg)); border-color: var(--psm-green); }
+    ${P} .psm-sw.on::after { transform: translateX(16px); background: var(--psm-green); }
+    ${P} .psm-seg { display: flex; border: 1px solid var(--psm-ctl); border-radius: 6px; overflow: hidden; }
+    ${P} .psm-seg button { flex: 1; min-width: 0; height: 32px; margin: 0; padding: 0 6px; border: none; border-left: 1px solid var(--psm-ctl); background: none; color: var(--psm-fg); font-size: 13px; cursor: pointer; }
+    ${P} .psm-seg button:first-child { border-left: none; }
+    ${P} .psm-seg button.psm-on { background: color-mix(in oklab, var(--psm-fg) 13%, var(--psm-bg)); font-weight: 600; }
 
-    .psm-show-disabled {
-      display: flex; align-items: center; gap: ${sp(0.625)};
-      font-size: ${px('caption')}; padding: ${sp(0.5)} 0 ${sp(0.75)}; cursor: pointer;
+    /* Tick mode ("Add to folder"): a sticky bar on top of the list */
+    ${P} .psm-selbar {
+      position: sticky; top: -12px; z-index: 6; margin: -12px -12px 0; padding: 8px 12px;
+      display: flex; align-items: center; gap: 8px; border-bottom: 1px solid var(--psm-hair);
+      background: color-mix(in oklab, var(--psm-q) 13%, var(--psm-bg));
     }
-    .psm-prompt-row { display: flex; align-items: center; gap: ${sp(0.75)}; padding: ${sp(0.25)} 0; }
-    .psm-dot { width: 5px; height: 5px; border-radius: 50%; flex-shrink: 0; }
-    .psm-dot.on  { background: #1D9E75; }
-    .psm-dot.off { background: ${border}; }
-    .psm-pname { font-size: ${px('caption')}; }
+    ${P} .psm-selbar-t { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+    ${P} .psm-selbar-t .psm-cf-t { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    ${P} .psm-pk-r { display: flex; align-items: center; gap: 10px; min-height: 36px; padding: 0 6px; margin: 0; border-radius: 6px; cursor: pointer; font-size: 14px; min-width: 0; }
+    @media (hover: hover) { ${P} .psm-pk-r:hover, ${P} .psm-prow.sel:hover { background: var(--psm-hover); } }
 
-    .psm-form-label {
-      font-size: ${px('label')}; text-transform: uppercase;
-      letter-spacing: .07em; margin-bottom: ${sp(0.5)}; display: block;
-    }
-    .psm-form-select, .psm-form-input, .psm-form-textarea {
-      width: 100%; box-sizing: border-box; border-radius: 6px; outline: none;
-      padding: ${sp(0.625)} ${sp(1.125)}; font-size: ${fluid('body')} !important;
-      display: block; margin-bottom: ${sp(1)};
-    }
-    .psm-form-textarea { min-height: 72px; resize: vertical; }
+    /* Prompt folders */
+    ${P} .psm-icg { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 4px; }
+    ${P} .psm-icn { height: 36px; margin: 0; padding: 0; border: 1px solid var(--psm-hair); border-radius: 6px; background: none; font-size: 18px; cursor: pointer; color: var(--psm-fg); }
+    ${P} .psm-icn.psm-on { border-color: var(--psm-q); background: color-mix(in oklab, var(--psm-q) 12%, var(--psm-bg)); }
+    ${P} .psm-emo { font-size: 15px; width: 20px; text-align: center; flex-shrink: 0; line-height: 1; }
+    ${P} .psm-pfr { display: flex; align-items: center; gap: 2px; min-height: 34px; padding-left: 6px; border-radius: 6px; font-size: 14px; min-width: 0; }
 
-    .psm-new-folder-row { display: flex; gap: ${sp(0.625)}; margin-bottom: ${sp(1)}; }
-    .psm-new-folder-row input {
-      flex: 1; border-radius: 6px; outline: none; min-width: 0;
-      padding: ${sp(0.5)} ${sp(1)}; font-size: ${fluid('body')} !important;
-    }
-    .psm-new-folder-row button {
-      padding: ${sp(0.5)} ${sp(1.25)}; border-radius: 5px; cursor: pointer;
-      font-size: ${fluid('body')} !important; white-space: nowrap;
-    }
-
-    .psm-btn-row { display: flex; gap: ${sp(0.75)}; margin-top: ${sp(1)}; }
-    .psm-btn-row button {
-      flex: 1; padding: ${sp(0.625)} 0; border-radius: 6px;
-      font-size: ${fluid('body')} !important; cursor: pointer;
-    }
-
-    .psm-data-row {
-      display: flex; gap: ${sp(0.75)}; padding-top: ${sp(1)};
-      border-top: 1px solid ${border}; margin-top: ${sp(0.5)};
-    }
-    .psm-data-row button {
-      flex: 1; padding: ${sp(0.375)} 0; border-radius: 5px; cursor: pointer;
-      font-size: ${px('caption')} !important;
-    }
-    .psm-data-row .psm-danger { border-color: #E24B4A !important; color: #E24B4A !important; }
-    .psm-data-row .psm-danger:hover { background: oklch(from #E24B4A l c h / 0.08) !important; }
-
-    .psm-toast {
-      position: absolute !important; bottom: ${sp(0.75)} !important; left: 50% !important;
-      transform: translateX(-50%) !important;
-      background: ${bg} !important; border: 1px solid ${border} !important;
-      border-radius: 7px; padding: ${sp(0.75)} ${sp(1.25)}; font-size: ${px('caption')};
-      color: ${muted} !important; opacity: 0; pointer-events: none; transition: opacity .2s;
-      z-index: 3 !important; max-width: calc(100% - ${sp(2)}) !important;
-      white-space: normal !important; text-align: center !important; line-height: 1.35 !important;
-      box-shadow: 0 2px 10px oklch(0 0 0 / 0.2);
-    }
-    .psm-toast.show { opacity: 1 !important; }
-
-    /* ── Text selection prevention ──────────────────────────────── */
-    .psm-body { user-select: none; -webkit-user-select: none; }
-    #psm-panel input, #psm-panel textarea, #psm-panel select {
-      user-select: text !important; -webkit-user-select: text !important;
-    }
-
-    /* ── Folder block + preset sublist ─────────────────────────── */
-    .psm-folder-block { display: block; }
-    /* psm-preset-item is the SortableJS draggable unit — wraps both the
-       preset row AND its inline note so they travel together as one piece. */
-    .psm-preset-item  { display: block; }
-    .psm-preset-list  { display: block; min-height: 2px; }
-    /* Collapsed lists: zero height normally, inflated to a full touch target
-       during drag so mobile users can drop into them. The list is empty (no
-       presets rendered) so the 44px zone is invisible but hittable. On a
-       successful drop, onEnd auto-expands the folder. */
-    .psm-preset-list--collapsed { height: 0; overflow: hidden; min-height: 0; }
-    .psm-drag-active .psm-preset-list--collapsed { min-height: 44px; height: 44px; }
-    .psm-preset-list--collapsed * { transition: none !important; transform: none !important; }
-
-    /* ── Drag handle ────────────────────────────────────────────── */
-    .psm-drag-handle {
-      cursor: grab; flex-shrink: 0;
-      padding: 0 ${sp(0.5)}; color: ${border};
-      font-size: ${px('body')}; line-height: 1;
-      touch-action: none;
-      user-select: none; -webkit-user-select: none;
-    }
-    .psm-drag-handle:active { cursor: grabbing; }
-
-    /* ── SortableJS feedback ────────────────────────────────────── */
-    .psm-sortable-ghost  { opacity: 0.35; }
-    .psm-sortable-chosen { background: oklch(from var(--SmartThemeBorderColor, #ccc) l c h / 0.1); }
-
-    /* ── Folder drag-over highlight ─────────────────────────────── */
-    .psm-folder-block.psm-folder-drag-over > .psm-folder-row .psm-folder-main {
-      background: oklch(from var(--SmartThemeBorderColor, #ccc) l c h / 0.18);
-      border-radius: 4px;
-      outline: 1px solid oklch(from var(--SmartThemeBorderColor, #ccc) l c h / 0.55);
-      outline-offset: -1px;
-    }
+    /* ── Touch sizes (phone sheet, or a touch screen) ───────────────────── */
+    ${T} { font-size: 14px; }
+    ${T} .psm-i { width: 18px; height: 18px; }
+    ${T} .psm-tag .psm-i { width: 12px; height: 12px; }
+    ${T} .psm-grip .psm-i { width: 14px; height: 14px; }
+    ${T} .psm-dot { width: 7px; height: 7px; }
+    ${T} .psm-h { gap: 2px; padding: 0 4px 4px 6px; }
+    ${T}.psm-float .psm-h { padding: 4px 4px 4px 2px; }
+    ${T} .psm-tab { height: 44px; border-radius: 8px; font-size: 14px; }
+    ${T} .psm-ib, ${T} .psm-ib.psm-sm { width: 44px; height: 44px; border-radius: 8px; }
+    ${T} .psm-btn { height: 44px; padding: 0 14px; font-size: 14px; }
+    ${T} .psm-btn.psm-sm { height: 40px; padding: 0 12px; }
+    ${T} .psm-inp { height: 44px; padding: 0 12px; }
+    ${T} .psm-srch > .psm-i { left: 12px; }
+    ${T} .psm-srch .psm-inp { padding-left: 38px; padding-right: 46px; }
+    ${T} .psm-srch .psm-ib { right: 0; }
+    ${T} .psm-crumb { gap: 2px; margin: -6px 0 0 -10px; }
+    ${T} .psm-crumb h3 { margin-top: 11px; }
+    ${T} .psm-frow, ${T} .psm-prow { gap: 0; min-height: 48px; border-radius: 8px; }
+    ${T} .psm-grip { width: 26px; }
+    ${T} .psm-fbtn, ${T} .psm-pbtn { height: 48px; font-size: 15px; }
+    ${T} .psm-kids { margin-left: 24px; padding: 2px 0 6px 6px; }
+    ${T} .psm-plist.psm-closed { height: 48px; }
+    ${T} .psm-note { margin-left: 30px; }
+    ${T} .psm-link { padding: 0; min-height: 44px; }
+    ${T} .psm-addrow { height: 44px; padding: 0 10px; font-size: 14px; }
+    ${T} .psm-menu { min-width: 220px; border-radius: 10px; top: calc(100% - 4px); }
+    ${T} .psm-mi { gap: 12px; height: 48px; padding: 0 12px; font-size: 15px; border-radius: 8px; }
+    ${T} .psm-cf { padding: 12px; }
+    ${T} .psm-cf-t { font-size: 15px; }
+    ${T} .psm-cf-b .psm-btn { flex: 1; }
+    ${T} .psm-snap { padding: 8px 4px 8px 12px; }
+    ${T} .psm-snap-top { gap: 4px; }
+    ${T} .psm-snap-name { font-size: 15px; }
+    ${T} .psm-snap .psm-menu { top: 54px; right: 4px; }
+    ${T} .psm-wk { height: 44px; }
+    ${T} .psm-spin { width: 16px; height: 16px; }
+    ${T} .psm-strip { padding: 2px 2px 2px 12px; min-height: 48px; }
+    ${T} .psm-disc { height: 44px; }
+    ${T} .psm-pst-r { min-height: 24px; }
+    ${T} .psm-sd { width: 7px; height: 7px; }
+    ${T} .psm-swr { min-height: 48px; font-size: 15px; }
+    ${T} .psm-sw { width: 46px; height: 28px; border-radius: 14px; }
+    ${T} .psm-sw::after { top: 3px; left: 3px; width: 19px; height: 19px; }
+    ${T} .psm-sw.on::after { transform: translateX(18px); }
+    ${T} .psm-seg button { height: 44px; font-size: 14px; }
+    ${T} .psm-pk-r { gap: 12px; min-height: 48px; font-size: 15px; }
+    ${T} .psm-prow.sel { gap: 12px; padding: 0 8px; font-size: 15px; }
+    ${T} .psm-prow.sel input, ${T} .psm-pk-r input { width: 20px; height: 20px; }
+    ${T} .psm-prow.sel input::before, ${T} .psm-pk-r input::before { width: 13px; height: 13px; }
+    ${T} .psm-tag { max-width: 120px; }
+    ${T} .psm-rsz { width: 28px; height: 28px; }
+    ${T} .psm-icg { gap: 6px; }
+    ${T} .psm-icn { height: 44px; border-radius: 8px; font-size: 20px; }
+    ${T} .psm-emo { font-size: 16px; width: 22px; }
+    ${T} .psm-pfr { gap: 0; min-height: 44px; }
+    ${T} .psm-fsel { height: 44px; font-size: 15px; }
   `;
   parent$(parentDoc.head).append(`<style id="${STYLE_ID}">${css}</style>`);
 }

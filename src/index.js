@@ -4,9 +4,9 @@ function init() {
   injectStyles();
   createAndInjectUI();
   bindPanelInteractionIsolation();
-  bindHeaderDrag();
+  bindPanelEvents();
   injectExtensionMenu();
-  scheduleInjectOpenaiRangePresetShortcut();
+  scheduleInjectEntryRow();
 
   loadSortable(() => {
     // Register the permanent chat-ready state machine listeners.
@@ -19,26 +19,40 @@ function init() {
         const pn = currentPreset();
         const n  = snapCountFor(pn);
         LOG('preset changed → "' + pn + '", ' + n + ' snapshots');
-        confirmingSnaps.clear();
-        deletingSnaps.clear();
-        if (pendingApply) {
+        if (pendingApply?.original) {
+          const { presetName, asSwitch } = pendingApply;
+          pendingApply = null;
+          psmFinishOriginalSwitch(presetName, asSwitch);
+        } else if (pendingApply) {
           const { presetName, snapName } = pendingApply;
           pendingApply = null;
           const snap = (dbLoad()[presetName] || {})[snapName];
           // psmApplyStates calls waitForChatReady() internally — it will
           // block until the chat-ready state machine clears the load.
           if (snap) psmApplyStates(presetName, snapName, snap);
+          else {
+            ERR('Snapshot vanished during switch:', snapName);
+            psmSay('err', psmT('apply_failed', snapName));
+            psmRelease();
+          }
+        } else {
+          // A switch from outside PSM: drop any half-finished confirm.
+          confirmingSnaps.clear();
         }
-        if (panelOpen) { currentView = 'browser'; renderView(); }
+        // Stay on the same page; just show the new state.
+        if (panelOpen) psmRender();
+        psmRefreshEntryRow();
       });
     } catch(e) { ERR('eventOn failed:', e); }
 
     $(window).on('pagehide', () => {
-      parent$('#psm-panel, #' + STYLE_ID + ', #psm-wand-item, #psm-openai-preset-shortcut-wrap', parentDoc).remove();
+      parent$('#psm-panel, #' + STYLE_ID + ', #psm-wand-item, #' + PSM_ENTRY_ROW_ID, parentDoc).remove();
+      parent$('#extensionsMenu .psm-ext-container', parentDoc).remove();
+      psmSetDrawerPad(0);
     });
 
     window.parent.addEventListener('resize', () => {
-      if (panelOpen) clampPanelToViewport();
+      if (panelOpen) psmPlacePanel();
     });
 
     const n = snapCountFor(currentPreset());

@@ -1,544 +1,276 @@
-// Prompt Folders panel, popovers, and inline interactions.
+// Prompt Folders tab of the PSM window: folder list, icon picker, templates,
+// tick mode for adding prompts and "show in prompt list". Rendering and event
+// wiring are shared with the Presets tab (see src/ui/panel.js).
 
-let pdoPanelOpen = false;
-let pdoToastTimer = null;
-const pdoExpandedPanelFolders = new Set();
-const pdoDeletingFolders = new Map();
-let pdoRenamingFolder = null;
-let pdoIconPickerFolder = null;
-let pdoMassFolder = null;
-let pdoMassFilter = '';
-let pdoMassChecked = new Set();
-let pdoMassPopupPos = null;
-let pdoTemplatesOpen = false;
-let pdoTemplateConfirm = null;
-let pdoTemplateSaveName = '';
-let pdoTemplateApplyName = '';
-let pdoTemplateDeleteName = '';
+const PDO_PANEL_ICONS = ['📁', '✍️', '🔥', '🎭', '⚙️', '💬', '🧠', '🌙', '⭐', '🔒', '📌', '🧪'];
 
-function pdoShowToast(msg) {
-  const toast = parentDoc.querySelector('#pdo-panel .pdo-toast');
-  if (!toast) return;
-  toast.textContent = msg;
-  toast.classList.add('show');
-  clearTimeout(pdoToastTimer);
-  pdoToastTimer = setTimeout(() => toast.classList.remove('show'), 2200);
+function pdoNotify(msg) {
+  if (panelOpen) psmSay('info', msg);
+  else if (window.parent.toastr?.info) window.parent.toastr.info(msg);
+  else LOG('Prompt Folders:', msg);
 }
 
-function ensurePdoPanel() {
-  let panel = parentDoc.querySelector('#pdo-panel');
-  if (panel) return panel;
-  panel = parentDoc.createElement('div');
-  panel.id = 'pdo-panel';
-  panel.innerHTML = '<div id="pdo-panel-inner"></div><div class="pdo-toast" aria-live="polite" role="status"></div>';
-  parentDoc.body.appendChild(panel);
-  pdoStopBubble(panel);
-  bindPdoPanelDrag();
-  return panel;
-}
-
-function pdoOpenPanel() {
-  pdoPanelOpen = true;
-  ensurePdoPanel().classList.add('open');
-  renderPdoPanel();
-  window.parent.requestAnimationFrame(() => {
-    const panelEl = parentDoc.querySelector('#pdo-panel');
-    const saved = pdoPosLoad();
-    const pos = saved || pdoDefaultPanelPos();
-    panelEl.style.setProperty('top', pos.top + 'px', 'important');
-    panelEl.style.setProperty('left', pos.left + 'px', 'important');
-    pdoClampPanelToViewport();
-  });
-}
-
-function pdoClosePanel() {
-  pdoPanelOpen = false;
-  pdoRenamingFolder = null;
-  pdoIconPickerFolder = null;
-  pdoMassFolder = null;
-  pdoMassPopupPos = null;
-  pdoTemplatesOpen = false;
-  parentDoc.querySelector('#pdo-panel')?.classList.remove('open');
-  parent$('.pdo-popup, .pdo-template-panel', parentDoc).remove();
-}
-
-function pdoFolderRowHtml(presetName, cfg, folderId, prompts, counts) {
-  const folder = cfg.folders[folderId];
-  if (!folder) return '';
-  const expanded = pdoExpandedPanelFolders.has(folderId);
-  const renaming = pdoRenamingFolder === folderId;
-  const deleting = pdoDeletingFolders.has(folderId);
-  const members = pdoPromptsForFolder(cfg, folderId, prompts);
-  const count = counts[folderId] || 0;
-
-  const memberHtml = expanded ? `<div class="pdo-member-list" data-folder-members="${esc(folderId)}">${
-    members.length ? members.map(prompt => `
-      <div class="pdo-member-line" data-pdo-goto="${esc(prompt.id)}" role="button" tabindex="0" title="${esc(psmT('jump_to_prompt'))}">
-        <span class="pdo-member-name">${esc(prompt.name)}</span>
-        ${pdoButtonHtml('pdo-row-btn pdo-unassign', `data-pdo-unassign="${esc(prompt.id)}"`, PDO_GLYPHS.remove, psmT('remove_from_folder'))}
-      </div>
-    `).join('') : `<div class="pdo-member-line"><span class="pdo-member-name">${esc(psmT('no_assigned'))}</span><span></span></div>`
-  }</div>` : '';
-
-  const iconPicker = pdoIconPickerFolder === folderId ? `
-    <div class="pdo-icon-popover" data-icon-popover="${esc(folderId)}">
-      ${PDO_ICON_PALETTE.map(icon => pdoButtonHtml('pdo-row-btn pdo-icon-choice', `data-pdo-icon-choice="${esc(icon)}"`, esc(icon), psmT('use_icon'))).join('')}
-      <input class="pdo-icon-custom" data-pdo-icon-custom="${esc(folderId)}" maxlength="8" placeholder="${esc(psmT('custom_icon_ph'))}" />
-    </div>` : '';
-
-  return `<div class="pdo-folder-block" data-folder-id="${esc(folderId)}">
-    <div class="pdo-folder-row">
-      <span class="pdo-drag-handle" title="${esc(psmT('drag_reorder'))}">${PDO_GLYPHS.drag}</span>
-      ${pdoButtonHtml('pdo-row-btn pdo-collapse-btn', `data-pdo-panel-expand="${esc(folderId)}"`, expanded ? PDO_GLYPHS.down : PDO_GLYPHS.right, expanded ? psmT('hide_folder_prompts') : psmT('show_folder_prompts'))}
-      ${pdoButtonHtml('pdo-row-btn pdo-icon-btn', `data-pdo-icon="${esc(folderId)}"`, esc(folder.icon || PDO_DEFAULT_ICON), psmT('change_icon'))}
-      ${renaming
-        ? `<input class="pdo-rename-input" data-pdo-rename="${esc(folderId)}" value="${esc(folder.name)}" />`
-        : `<span class="pdo-folder-name" data-pdo-rename-start="${esc(folderId)}">${esc(folder.name)}</span>`}
-      <span class="pdo-count" title="${esc(psmT('prompts_in_folder'))}">(${count})</span>
-      ${pdoButtonHtml('pdo-row-btn pdo-add-prompts', `data-pdo-mass="${esc(folderId)}"`, '+', psmT('add_prompts'))}
-      ${pdoButtonHtml('pdo-row-btn pdo-folder-del' + (deleting ? ' confirming' : ''), `data-pdo-delete="${esc(folderId)}"`, deleting ? psmT('sure') + ' ' + PDO_GLYPHS.close : PDO_GLYPHS.close, psmT('delete_folder'))}
-    </div>
-    ${iconPicker}
-    ${memberHtml}
-  </div>`;
-}
-
-function renderPdoPanel() {
-  if (!pdoPanelOpen) return;
-  const panel = ensurePdoPanel();
+function pdoFoldersHtml() {
   const presetName = currentPreset();
   const cfg = pdoGetPresetConfig(presetName);
   const prompts = pdoReadPrompts();
   const counts = pdoFolderCounts(cfg, prompts);
-  const folderHtml = cfg.folderOrder.length
-    ? cfg.folderOrder.map(folderId => pdoFolderRowHtml(presetName, cfg, folderId, prompts, counts)).join('')
-    : `<div class="pdo-empty">${esc(psmT('no_folders'))}</div>`;
+  const shown = !pdoIsHidden();
+  const u = psmUi;
 
-  const hidden = pdoIsHidden();
-  const hiddenBanner = hidden
-    ? `<div class="pdo-hidden-notice">${esc(psmT('folders_hidden_banner'))}</div>`
-    : '';
-
-  panel.querySelector('#pdo-panel-inner').innerHTML = `
-    <div class="pdo-header">
-      <span class="pdo-header-title">${esc(psmT('folders_header', presetName))}</span>
-      ${pdoButtonHtml('pdo-ghost pdo-header-btn', 'id="pdo-hide-toggle"', hidden ? PDO_GLYPHS.eyeOff : PDO_GLYPHS.eye, hidden ? psmT('show_folders_in_list') : psmT('hide_folders_from_list'))}
-      ${pdoButtonHtml('pdo-ghost pdo-header-btn', 'id="pdo-templates-btn"', PDO_GLYPHS.info, psmT('templates'))}
-      ${pdoButtonHtml('pdo-ghost pdo-header-btn', 'id="pdo-close"', PDO_GLYPHS.close, psmT('close'))}
-    </div>
-    <div class="pdo-body">
-      ${hiddenBanner}
-      <div id="pdo-folder-list">${folderHtml}</div>
-      <div class="pdo-add-folder">
-        <input id="pdo-new-folder-input" type="text" placeholder="${esc(psmT('new_folder_ph'))}" />
-        <button id="pdo-new-folder-btn" type="button">${esc(psmT('add'))}</button>
-      </div>
+  const blocks = cfg.folderOrder.map(id => {
+    const f = cfg.folders[id];
+    if (!f) return '';
+    const open = u.pfOpen.has(id);
+    const renaming = u.renaming === 'p:' + id;
+    const menuOpen = u.menu === 'p:' + id;
+    const items = pdoPromptsForFolder(cfg, id, prompts);
+    const n = counts[id] || 0;
+    const iconOpen = u.iconFor === id;
+    return `<div class="psm-fblock" data-pf="${esc(id)}">
+      ${renaming ? nameRowHtml('renamePF', u.renameVal, { ph: psmT('folder_name'), label: psmT('folder_name'), input: 'renameVal', ok: 'renameOk', cancel: 'renameCancel', okLabel: psmT('save') }) : `
+      <div class="psm-frow">
+        <span class="psm-grip" title="${esc(psmT('drag_reorder'))}" aria-hidden="true">${psmIcon('grip')}</span>
+        <button type="button" class="psm-fbtn" data-act="pfToggle" data-a="${esc(id)}" aria-expanded="${open}">${psmIcon('chevR', 'psm-chev' + (open ? ' open' : ''))}<span class="psm-emo" aria-hidden="true">${esc(f.icon || PDO_DEFAULT_ICON)}</span><span class="psm-fname" title="${esc(f.name)}">${esc(f.name)}</span><span class="psm-cnt" aria-label="${esc(psmT('n_prompts', n))}">${n}</span></button>
+        ${ibHtml('kebab', 'menu', psmT('actions_for', f.name), { a: 'p:' + id, title: psmT('folder_actions'), cls: 'psm-sm', attrs: ` aria-expanded="${menuOpen}"` })}
+        ${menuOpen ? `<div class="psm-menu" role="menu">
+          ${miHtml('plus', psmT('add_prompts'), 'pickPrompts', { a: id })}
+          ${miHtml('pencil', psmT('rename'), 'pfRename', { a: id })}
+          ${miHtml('smile', psmT('change_icon'), 'pfIcon', { a: id })}
+          ${miHtml('trash', psmT('delete_folder'), 'pfDelete', { a: id, red: true })}
+        </div>` : ''}
+      </div>`}
+      ${cfHtml('delPF', id)}
+      ${iconOpen ? `<div class="psm-cf" data-reveal="1">
+        <div class="psm-icg">${PDO_PANEL_ICONS.map(ic => `<button type="button" class="psm-icn${ic === f.icon ? ' psm-on' : ''}" data-act="pfIconPick" data-a="${esc(id)}" data-b="${esc(ic)}" aria-label="${esc(psmT('use_icon', ic))}" aria-pressed="${ic === f.icon}">${esc(ic)}</button>`).join('')}</div>
+        <div class="psm-row">${inpHtml('customIcon', u.customIcon, { ph: psmT('own_emoji'), label: psmT('custom_icon'), input: 'customIcon', enter: 'pfIconCustom' })}${btnHtml(psmT('use'), 'pfIconCustom', { a: id })}</div>
+        <div class="psm-cf-b">${btnHtml(psmT('done'), 'pfIconDone')}</div>
+      </div>` : ''}
+      ${open ? `<div class="psm-kids">
+        ${items.map(p => `<div class="psm-pfr">
+          <span class="psm-nm" title="${esc(p.name)}">${esc(p.name)}</span>
+          ${p.marker ? `<span class="psm-tag">${esc(psmT('marker'))}</span>` : ''}
+          ${ibHtml('locate', 'pfJump', psmT('show_x_in_list', p.name), { a: p.id, title: psmT('show_in_list'), cls: 'psm-sm mut' })}
+          ${ibHtml('x', 'pfRemove', psmT('remove_x', p.name), { a: p.id, b: id, title: psmT('remove_from_folder'), cls: 'psm-sm mut' })}
+        </div>`).join('')}
+        ${!items.length ? `<p class="psm-cap" style="padding: 6px">${esc(psmT('folder_empty'))}</p>` : ''}
+        <button type="button" class="psm-addrow" data-act="pickPrompts" data-a="${esc(id)}">${psmIcon('plus')}<span>${esc(psmT('add_prompts'))}</span></button>
+      </div>` : ''}
     </div>`;
+  }).join('');
 
-  bindPdoPanelEvents();
-  initPdoFolderSortable();
-  if (pdoRenamingFolder) {
-    const input = panel.querySelector('.pdo-rename-input');
-    if (input) { input.focus(); input.select(); }
+  const caption = esc(psmT('folders_for', '\u0000')).replace('\u0000', `<strong style="color: var(--psm-fg); font-weight: 600">${esc(presetName)}</strong>`);
+  return `<p class="psm-cap" style="overflow-wrap: anywhere">${caption}</p>
+    <div class="psm-row">${btnHtml(psmT('new_folder'), 'newPF', { icon: 'plus', cls: 'psm-wide' })}${btnHtml(psmT('templates'), 'openTpl', { icon: 'copy', cls: 'psm-wide' })}</div>
+    ${swHtml(shown, psmT('show_headers'), 'pfHeaders')}
+    ${u.newPF !== null ? nameRowHtml('newPF', u.newPF, { ph: psmT('folder_name'), label: psmT('new_pf_name'), input: 'newPF', ok: 'newPFOk', cancel: 'newPFCancel', okLabel: psmT('create') }) : ''}
+    ${!cfg.folderOrder.length ? `<div class="psm-empty"><p class="psm-cap">${esc(psmT('no_prompt_folders'))}</p>${btnHtml(psmT('new_folder'), 'newPF', { icon: 'plus' })}</div>` : ''}
+    <div class="psm-fl" id="pdo-flist">${blocks}</div>`;
+}
+
+function pdoTemplatesHtml() {
+  const tpls = pdoDbLoad().templates || {};
+  const names = Object.keys(tpls).sort((a, b) => a.localeCompare(b));
+  const typed = psmUi.tplName.trim();
+  const ex = typed ? names.find(n => n.toLowerCase() === typed.toLowerCase()) : null;
+  return `${crumbHtml('closeTpl', psmT('back_pf'), psmT('templates'))}
+    <div class="psm-sec">
+      <p class="psm-lbl">${esc(psmT('tpl_save_lbl'))}</p>
+      <div class="psm-row">${inpHtml('tplName', psmUi.tplName, { ph: psmT('tpl_name'), input: 'tplName', enter: 'tplSave' })}${btnHtml(ex ? psmT('overwrite_dots') : psmT('save'), 'tplSave', { disabled: !typed })}</div>
+      ${cfHtml('overTpl', 'save')}
+    </div>
+    <hr class="psm-hr">
+    <div class="psm-sec">
+      <p class="psm-lbl">${esc(psmT('saved_tpls'))}</p>
+      ${names.map(n => {
+        const t = tpls[n];
+        const info = psmT('tpl_info', (t.folderOrder || []).length, Object.keys(t.assignmentsByName || {}).length);
+        return `<div class="psm-snap">
+          <div class="psm-snap-top">
+            <div class="psm-snap-txt"><span class="psm-snap-name">${esc(n)}</span><span class="psm-cap">${esc(info)}</span></div>
+            ${btnHtml(psmT('apply'), 'tplApply', { a: n })}
+            ${ibHtml('trash', 'tplDelete', psmT('del_tpl_x', n), { a: n, title: psmT('del_tpl'), cls: 'psm-sm mut' })}
+          </div>
+          ${cfHtml('applyTpl', n)}${cfHtml('delTpl', n)}
+        </div>`;
+      }).join('')}
+      ${!names.length ? `<p class="psm-cap">${esc(psmT('no_tpls'))}</p>` : ''}
+    </div>`;
+}
+
+// ─── Tick mode: add prompts to a folder ───────────────────────────────────
+// Every prompt of the preset, in list order. Prompts in another folder show
+// that folder; ticking one moves it here.
+
+PSM_SELECT.prompt = {
+  title(folderId) {
+    const f = pdoGetPresetConfig(currentPreset()).folders[folderId];
+    return f ? psmT('add_to_icon', f.icon || PDO_DEFAULT_ICON, f.name) : '';
+  },
+  add(folderId, ids) {
+    const presetName = currentPreset();
+    const f = pdoGetPresetConfig(presetName).folders[folderId];
+    pdoAssignPrompts(presetName, folderId, ids);
+    psmUi.pfOpen.add(folderId);
+    psmSay('ok', psmT('added_n', ids.length, f ? f.name : ''));
+  },
+};
+
+function pdoSelectHtml() {
+  const k = psmUi.sel;
+  const cfg = pdoGetPresetConfig(currentPreset());
+  const q = psmUi.selq.trim().toLowerCase();
+  const rows = pdoReadPrompts().filter(p => !q || p.name.toLowerCase().includes(q)).map(p => {
+    const fid = cfg.assignments[p.id];
+    const owner = fid && cfg.folders[fid] ? cfg.folders[fid] : null;
+    const locked = fid === k.folder;
+    const ownerLabel = owner && !locked ? (owner.icon || PDO_DEFAULT_ICON) + ' ' + owner.name : '';
+    return `<label class="psm-pk-r"><input type="checkbox" data-sel="${esc(p.id)}"${locked || k.ids.has(p.id) ? ' checked' : ''}${locked ? ' disabled' : ''}><span class="psm-nm" title="${esc(p.name)}">${esc(p.name)}</span>${p.marker ? `<span class="psm-tag">${esc(psmT('marker'))}</span>` : ''}${ownerLabel ? `<span class="psm-tag" title="${esc(ownerLabel)}"><span>${esc(ownerLabel)}</span></span>` : ''}</label>`;
+  });
+  return `${psmSelBarHtml()}
+    <div class="psm-srch">${psmIcon('search')}${inpHtml('selq', psmUi.selq, { ph: psmT('filter_prompts'), input: 'selq' })}</div>
+    <div class="psm-fl">${rows.join('')}</div>`;
+}
+
+// ─── Show a prompt in SillyTavern's list ──────────────────────────────────
+
+function pdoOpenPromptDrawer() {
+  const drawer = parentDoc.getElementById('left-nav-panel');
+  if (!drawer || drawer.classList.contains('openDrawer')) return false;
+  parentDoc.querySelector('#ai-config-button .drawer-toggle')?.click();
+  return true;
+}
+
+// Phone: the sheet gets shorter (at most 340 of 844) and the prompt is
+// centred in the space above it. The sheet stays open.
+function pdoJumpFromPanel(promptId) {
+  // A search could hide the row: clear it first.
+  const input = parentDoc.getElementById('pdo-search-input');
+  if (input) input.value = '';
+  parentDoc.getElementById('pdo-search-clear')?.setAttribute('hidden', '');
+  pdoApplySearch('');
+  if (psmIsSheet()) {
+    psmUi.sheetH.folders = Math.min(psmUi.sheetH.folders, 340 / 844);
+    psmPlacePanel();
   }
-  if (pdoMassFolder) renderPdoMassPopup();
-  else parent$('.pdo-popup', parentDoc).remove();
-  if (pdoTemplatesOpen) renderPdoTemplatesPopover();
-  else parent$('.pdo-template-panel', parentDoc).remove();
+  const opened = pdoOpenPromptDrawer();
+  setTimeout(() => pdoGotoPrompt(promptId), opened ? 350 : 80);
 }
 
-function bindPdoPanelEvents() {
-  const $p = parent$('#pdo-panel', parentDoc);
-  $p.find('#pdo-close').on('click', pdoClosePanel);
-  $p.find('#pdo-hide-toggle').on('click', function() {
-    pdoSetHidden(!pdoIsHidden());
-    renderPdoPanel();
-  });
-  $p.find('#pdo-templates-btn').on('click', function(e) {
-    e.stopPropagation();
-    pdoTemplatesOpen = !pdoTemplatesOpen;
-    pdoTemplateConfirm = null;
-    renderPdoPanel();
-  });
-
-  $p.find('#pdo-new-folder-btn').on('click', () => {
-    const input = parentDoc.querySelector('#pdo-new-folder-input');
-    const name = input?.value.trim() || '';
-    if (!name) { input?.focus(); return; }
-    const id = pdoCreateFolder(currentPreset(), name);
-    if (!id) pdoShowToast(psmT('toast_folder_exists'));
-  });
-  $p.find('#pdo-new-folder-input').on('keydown', e => {
-    if (e.key === 'Enter') $p.find('#pdo-new-folder-btn').trigger('click');
-  });
-
-  $p.find('[data-pdo-panel-expand]').on('click', function() {
-    const folderId = attr(this, 'pdo-panel-expand');
-    toggleSet(pdoExpandedPanelFolders, folderId);
-    renderPdoPanel();
-  });
-
-  $p.find('[data-pdo-icon]').on('click', function() {
-    const folderId = attr(this, 'pdo-icon');
-    pdoIconPickerFolder = pdoIconPickerFolder === folderId ? null : folderId;
-    renderPdoPanel();
-  });
-  $p.find('[data-pdo-icon-choice]').on('click', function() {
-    if (!pdoIconPickerFolder) return;
-    pdoSetFolderIcon(currentPreset(), pdoIconPickerFolder, attr(this, 'pdo-icon-choice'));
-    pdoIconPickerFolder = null;
-  });
-  $p.find('[data-pdo-icon-custom]').on('keydown blur', function(e) {
-    if (e.type === 'keydown' && e.key !== 'Enter') return;
-    const val = $(this).val();
-    if (val) pdoSetFolderIcon(currentPreset(), attr(this, 'pdo-icon-custom'), val);
-    pdoIconPickerFolder = null;
-  }).on('click', e => e.stopPropagation());
-
-  $p.find('[data-pdo-rename-start]').on('dblclick', function() {
-    pdoRenamingFolder = attr(this, 'pdo-rename-start');
-    renderPdoPanel();
-  });
-  $p.find('[data-pdo-rename]').on('keydown', function(e) {
-    if (e.key === 'Enter') {
-      e.preventDefault();
-      const ok = pdoRenameFolder(currentPreset(), attr(this, 'pdo-rename'), $(this).val());
-      if (!ok) pdoShowToast(psmT('toast_folder_exists'));
-      pdoRenamingFolder = null;
-    }
-    if (e.key === 'Escape') { pdoRenamingFolder = null; renderPdoPanel(); }
-  }).on('blur', function() {
-    if (!pdoRenamingFolder) return;
-    const ok = pdoRenameFolder(currentPreset(), attr(this, 'pdo-rename'), $(this).val());
-    if (!ok) pdoShowToast(psmT('toast_folder_exists'));
-    pdoRenamingFolder = null;
-  }).on('click', e => e.stopPropagation());
-
-  $p.find('[data-pdo-unassign]').on('click', function(e) {
-    e.stopPropagation();
-    pdoUnassignPrompt(currentPreset(), attr(this, 'pdo-unassign'));
-  });
-  $p.find('[data-pdo-goto]').on('click', function(e) {
-    if (e.target.closest('.pdo-unassign')) return;
-    pdoGotoPrompt(attr(this, 'pdo-goto'));
-  });
-  $p.find('[data-pdo-goto]').on('keydown', function(e) {
-    if (e.key !== 'Enter' && e.key !== ' ') return;
-    e.preventDefault();
-    pdoGotoPrompt(attr(this, 'pdo-goto'));
-  });
-  $p.find('[data-pdo-mass]').on('click', function() {
-    pdoMassFolder = attr(this, 'pdo-mass');
-    pdoMassFilter = '';
-    pdoMassChecked = new Set();
-    pdoMassPopupPos = null;
-    renderPdoPanel();
-  });
-
-  $p.find('[data-pdo-delete]').on('click', function() {
-    const folderId = attr(this, 'pdo-delete');
-    if (pdoDeletingFolders.has(folderId)) {
-      clearTimeout(pdoDeletingFolders.get(folderId));
-      pdoDeletingFolders.delete(folderId);
-      pdoDeleteFolder(currentPreset(), folderId);
-      return;
-    }
-    const timer = setTimeout(() => {
-      pdoDeletingFolders.delete(folderId);
-      renderPdoPanel();
-    }, 3000);
-    pdoDeletingFolders.set(folderId, timer);
-    renderPdoPanel();
-  });
+function pdoRenameFromPanel(folderId, rawName) {
+  const name = String(rawName || '').trim();
+  if (!name) return true;
+  if (!pdoRenameFolder(currentPreset(), folderId, name)) { psmSay('err', psmT('toast_folder_exists')); return false; }
+  return true;
 }
 
-function initPdoFolderSortable() {
-  const listEl = parentDoc.querySelector('#pdo-folder-list');
+// ─── Drag and drop: prompt folder order ───────────────────────────────────
+
+function initPdoFolderSortable(panel) {
+  const listEl = panel.querySelector('#pdo-flist');
   const Sortable = window.parent.Sortable;
   if (!listEl || !Sortable) return;
-  if (listEl._pdoSortable) {
-    try { listEl._pdoSortable.destroy(); } catch (_) {}
-  }
-  listEl._pdoSortable = Sortable.create(listEl, {
+  Sortable.create(listEl, {
     animation: 150,
-    draggable: '.pdo-folder-block',
-    handle: '.pdo-drag-handle',
-    ghostClass: 'pdo-sortable-ghost',
-    chosenClass: 'pdo-sortable-chosen',
+    delay: psmIsTouch() ? 150 : 0,
+    delayOnTouchOnly: true,
+    touchStartThreshold: 5,
+    draggable: '.psm-fblock',
+    handle: '.psm-frow > .psm-grip',
+    ghostClass: 'psm-sortable-ghost',
+    chosenClass: 'psm-sortable-chosen',
+    scroll: panel.querySelector('.psm-body') || true,
+    bubbleScroll: false,
+    onStart() { psmDragging = true; psmUi.menu = null; },
     onEnd() {
-      const order = [...listEl.querySelectorAll(':scope > .pdo-folder-block')]
-        .map(el => el.dataset.folderId).filter(Boolean);
+      psmDragging = false;
+      const order = [...listEl.querySelectorAll(':scope > .psm-fblock')].map(el => el.dataset.pf).filter(Boolean);
       pdoSetFolderOrder(currentPreset(), order);
+      setTimeout(() => { psmRenderPending = false; psmRender(); }, 170);
     },
   });
 }
 
-function pdoPopupPos(anchorSelector) {
-  const anchor = parentDoc.querySelector(anchorSelector);
-  const rect = anchor?.getBoundingClientRect();
-  const top = rect ? rect.bottom + 6 : 80;
-  const left = rect ? rect.left : 80;
-  return { top, left };
-}
+// ─── Actions ──────────────────────────────────────────────────────────────
 
-function pdoClampFloatingPos(el, top, left) {
-  const margin = 12;
-  const maxHeight = Math.max(180, window.parent.innerHeight - margin * 2);
-  el.style.maxHeight = maxHeight + 'px';
-  const width = Math.min(el.offsetWidth || 320, window.parent.innerWidth - margin * 2);
-  const height = Math.min(el.offsetHeight || maxHeight, maxHeight);
-  return {
-    top: Math.min(Math.max(margin, top), Math.max(margin, window.parent.innerHeight - height - margin)),
-    left: Math.min(Math.max(margin, left), Math.max(margin, window.parent.innerWidth - width - margin)),
-  };
-}
-
-function pdoPlaceFloatingEl(el, pos) {
-  const next = pdoClampFloatingPos(el, pos.top, pos.left);
-  el.style.top = next.top + 'px';
-  el.style.left = next.left + 'px';
-  return next;
-}
-
-function bindPdoFloatingDrag(el, handleSelector, onMoved) {
-  if (!el || el.dataset.pdoFloatingDrag === '1') return;
-  el.dataset.pdoFloatingDrag = '1';
-  parent$(el).on('mousedown touchstart', handleSelector, function(e) {
-    if (parent$(e.target).closest('button, input, select, label').length) return;
-    const src = e.originalEvent?.touches ? e.originalEvent.touches[0] : e;
-    const startX = src.clientX;
-    const startY = src.clientY;
-    const startTop = parseFloat(el.style.top) || 0;
-    const startLeft = parseFloat(el.style.left) || 0;
-    let moved = false;
-
-    function onMove(ev) {
-      const raw = ev.originalEvent || ev;
-      const p = raw.touches ? raw.touches[0] : raw;
-      const dx = p.clientX - startX;
-      const dy = p.clientY - startY;
-      if (!moved && (Math.abs(dx) > 4 || Math.abs(dy) > 4)) moved = true;
-      if (!moved) return;
-      if (ev.cancelable) ev.preventDefault();
-      const next = pdoPlaceFloatingEl(el, { top: startTop + dy, left: startLeft + dx });
-      if (onMoved) onMoved(next);
-    }
-
-    function onUp() {
-      parentDoc.removeEventListener('mousemove', onMove);
-      parentDoc.removeEventListener('touchmove', onMove);
-      parentDoc.removeEventListener('mouseup', onUp);
-      parentDoc.removeEventListener('touchend', onUp);
-      parentDoc.removeEventListener('touchcancel', onUp);
-    }
-
-    parentDoc.addEventListener('mousemove', onMove);
-    parentDoc.addEventListener('touchmove', onMove, { passive: false });
-    parentDoc.addEventListener('mouseup', onUp);
-    parentDoc.addEventListener('touchend', onUp);
-    parentDoc.addEventListener('touchcancel', onUp);
-  });
-}
-
-function renderPdoMassPopup() {
-  parent$('.pdo-popup', parentDoc).remove();
-  const presetName = currentPreset();
-  const cfg = pdoGetPresetConfig(presetName);
-  const folder = cfg.folders[pdoMassFolder];
-  if (!folder) { pdoMassFolder = null; pdoMassPopupPos = null; return; }
-  const filter = pdoMassFilter.trim().toLowerCase();
-  const unassigned = pdoUnassignedPrompts(cfg);
-  const visible = unassigned.filter(prompt => !filter || prompt.name.toLowerCase().includes(filter));
-  const pos = pdoMassPopupPos || pdoPopupPos(`[data-pdo-mass="${pdoMassFolder}"]`);
-
-  const popup = parentDoc.createElement('div');
-  popup.className = 'pdo-popup';
-  popup.style.top = Math.max(12, pos.top) + 'px';
-  popup.style.left = Math.max(12, pos.left) + 'px';
-  popup.innerHTML = `
-    <div class="pdo-popup-header">
-      <span class="pdo-popup-title">${esc(psmT('add_to', folder.icon, folder.name))}</span>
-      ${pdoButtonHtml('pdo-ghost pdo-header-btn', 'id="pdo-mass-close"', PDO_GLYPHS.close, psmT('close'))}
-    </div>
-    <div class="pdo-popup-body">
-      <input class="pdo-popup-filter" id="pdo-mass-filter" value="${esc(pdoMassFilter)}" placeholder="${esc(psmT('mass_filter_ph'))}" />
-      <div id="pdo-mass-list">${
-        visible.length ? visible.map(prompt => `
-          <label class="pdo-prompt-choice">
-            <input type="checkbox" data-pdo-check="${esc(prompt.id)}"${pdoMassChecked.has(prompt.id) ? ' checked' : ''} />
-            <span class="pdo-prompt-choice-name">${esc(prompt.name)}</span>
-            ${prompt.marker ? '<span class="pdo-marker">marker</span>' : '<span></span>'}
-          </label>`).join('') : `<div class="pdo-empty">${esc(psmT('no_unassigned'))}</div>`
-      }</div>
-      <div class="pdo-popup-actions">
-        <button id="pdo-select-visible" type="button">${esc(psmT('select_all'))}</button>
-        <button id="pdo-mass-add" type="button">${esc(psmT('add'))}</button>
-        <button id="pdo-mass-cancel" type="button">${esc(psmT('cancel'))}</button>
-      </div>
-      </div>`;
-  parentDoc.body.appendChild(popup);
-  pdoMassPopupPos = pdoPlaceFloatingEl(popup, pos);
-  bindPdoFloatingDrag(popup, '.pdo-popup-header', next => { pdoMassPopupPos = next; });
-  pdoStopBubble(popup);
-
-  parent$('#pdo-mass-filter', parentDoc).on('input', function() {
-    pdoMassFilter = $(this).val();
-    renderPdoMassPopup();
-  }).trigger('focus');
-  parent$('[data-pdo-check]', popup).on('change', function() {
-    const id = attr(this, 'pdo-check');
-    this.checked ? pdoMassChecked.add(id) : pdoMassChecked.delete(id);
-  });
-  parent$('#pdo-select-visible', popup).on('click', () => {
-    const allSelected = visible.length && visible.every(prompt => pdoMassChecked.has(prompt.id));
-    visible.forEach(prompt => allSelected ? pdoMassChecked.delete(prompt.id) : pdoMassChecked.add(prompt.id));
-    renderPdoMassPopup();
-  });
-  parent$('#pdo-mass-add', popup).on('click', () => {
-    pdoAssignPrompts(presetName, pdoMassFolder, [...pdoMassChecked]);
-    pdoMassFolder = null;
-    pdoMassChecked = new Set();
-    pdoMassPopupPos = null;
-  });
-  parent$('#pdo-mass-close, #pdo-mass-cancel', popup).on('click', () => {
-    pdoMassFolder = null;
-    pdoMassChecked = new Set();
-    pdoMassPopupPos = null;
-    renderPdoPanel();
-  });
-}
-
-function renderPdoTemplatesPopover() {
-  parent$('.pdo-template-panel', parentDoc).remove();
-  const templates = Object.keys(pdoDbLoad().templates || {}).sort((a, b) => a.localeCompare(b));
-  if (!pdoTemplateApplyName && templates.length) pdoTemplateApplyName = templates[0];
-  if (!pdoTemplateDeleteName && templates.length) pdoTemplateDeleteName = templates[0];
-  const pos = pdoPopupPos('#pdo-templates-btn');
-  const panel = parentDoc.createElement('div');
-  panel.className = 'pdo-template-panel';
-  panel.style.top = Math.max(12, pos.top) + 'px';
-  panel.style.left = Math.max(12, pos.left) + 'px';
-  const confirm = pdoTemplateConfirm ? `
-    <div class="pdo-confirm-row">
-      <span>${esc(pdoTemplateConfirm.label)}</span>
-      <button type="button" id="pdo-template-confirm-yes">${esc(psmT('yes'))}</button>
-      <button type="button" id="pdo-template-confirm-cancel">${esc(psmT('cancel'))}</button>
-    </div>` : '';
-
-  const opts = templates.map(name => `<option value="${esc(name)}">${esc(name)}</option>`).join('');
-  panel.innerHTML = `
-    <div class="pdo-popup-header">
-      <span class="pdo-popup-title">${esc(psmT('templates'))}</span>
-      ${pdoButtonHtml('pdo-ghost pdo-header-btn', 'id="pdo-template-close"', PDO_GLYPHS.close, psmT('close'))}
-    </div>
-    <div class="pdo-template-body">
-      ${confirm}
-      <label class="pdo-template-label">${esc(psmT('tpl_save_current'))}</label>
-      <div class="pdo-template-row">
-        <input id="pdo-template-save-name" value="${esc(pdoTemplateSaveName)}" placeholder="${esc(psmT('name_ph'))}" />
-        <button id="pdo-template-save" type="button">${esc(psmT('save'))}</button>
-      </div>
-      <label class="pdo-template-label">${esc(psmT('tpl_apply'))}</label>
-      <div class="pdo-template-row">
-        <select id="pdo-template-apply">${opts}</select>
-        <button id="pdo-template-replace" type="button">${esc(psmT('apply'))}</button>
-      </div>
-      <label class="pdo-template-label">${esc(psmT('tpl_delete'))}</label>
-      <div class="pdo-template-row">
-        <select id="pdo-template-delete">${opts}</select>
-        <button id="pdo-template-delete-btn" type="button">${esc(psmT('del'))}</button>
-      </div>
-    </div>`;
-  parentDoc.body.appendChild(panel);
-  pdoStopBubble(panel);
-  parent$('#pdo-template-apply', panel).val(pdoTemplateApplyName);
-  parent$('#pdo-template-delete', panel).val(pdoTemplateDeleteName);
-
-  parent$('#pdo-template-close', panel).on('click', () => {
-    pdoTemplatesOpen = false;
-    pdoTemplateConfirm = null;
-    renderPdoPanel();
-  });
-  parent$('#pdo-template-save-name', panel).on('input', function() { pdoTemplateSaveName = $(this).val(); });
-  parent$('#pdo-template-apply', panel).on('change', function() { pdoTemplateApplyName = $(this).val(); });
-  parent$('#pdo-template-delete', panel).on('change', function() { pdoTemplateDeleteName = $(this).val(); });
-
-  parent$('#pdo-template-save', panel).on('click', () => {
-    const name = (parent$('#pdo-template-save-name', panel).val() || '').trim();
+Object.assign(PSM_ACTS, {
+  pfToggle(el) { toggleSet(psmUi.pfOpen, el.dataset.a); },
+  newPF() { psmUi.newPF = ''; psmUi.menu = null; psmUi._focus = 'newPF'; psmUi._reveal = '[data-fk="newPF"]'; },
+  newPFCancel() { psmUi.newPF = null; },
+  newPFOk() {
+    const name = String(psmUi.newPF || '').trim();
     if (!name) return;
-    if (pdoDbLoad().templates[name] && pdoTemplateConfirm?.action !== 'save') {
-      pdoTemplateConfirm = { action: 'save', name, label: psmT('confirm_tpl_overwrite', name) };
-      renderPdoTemplatesPopover();
-      return;
-    }
-    pdoSaveTemplate(name);
-    pdoTemplateSaveName = '';
-    pdoTemplateConfirm = null;
-    pdoShowToast(psmT('toast_tpl_saved'));
-    renderPdoPanel();
-  });
-  parent$('#pdo-template-replace', panel).on('click', () => pdoAskTemplateApply());
-  parent$('#pdo-template-delete-btn', panel).on('click', () => {
-    const name = parent$('#pdo-template-delete', panel).val();
-    if (!name) return;
-    pdoTemplateConfirm = { action: 'delete', name, label: psmT('confirm_tpl_delete', name) };
-    renderPdoTemplatesPopover();
-  });
-  parent$('#pdo-template-confirm-cancel', panel).on('click', () => {
-    pdoTemplateConfirm = null;
-    renderPdoTemplatesPopover();
-  });
-  parent$('#pdo-template-confirm-yes', panel).on('click', () => {
-    const c = pdoTemplateConfirm;
-    if (!c) return;
-    if (c.action === 'save') pdoSaveTemplate(c.name);
-    if (c.action === 'replace') pdoApplyTemplate(c.name);
-    if (c.action === 'delete') pdoDeleteTemplate(c.name);
-    pdoTemplateConfirm = null;
-    pdoShowToast(psmT('toast_tpl_updated'));
-    renderPdoPanel();
-  });
-}
+    const id = pdoCreateFolder(currentPreset(), name);
+    if (!id) { psmSay('err', psmT('toast_folder_exists')); return; }
+    psmUi.pfOpen.add(id);
+    psmUi.newPF = null;
+  },
+  pfHeaders() { pdoSetHidden(!pdoIsHidden()); },
+  openTpl() { Object.assign(psmUi, { fview: 'templates', menu: null, confirm: null }); },
+  closeTpl() { Object.assign(psmUi, { fview: 'list', confirm: null }); },
+  pickPrompts(el) { psmStartSel('prompt', el.dataset.a); return false; },
+  pfRename(el) {
+    const f = pdoGetPresetConfig(currentPreset()).folders[el.dataset.a];
+    if (!f) return;
+    Object.assign(psmUi, { renaming: 'p:' + el.dataset.a, renameVal: f.name, menu: null, _focus: 'renamePF', _reveal: '[data-fk="renamePF"]' });
+  },
+  pfIcon(el) { Object.assign(psmUi, { iconFor: el.dataset.a, customIcon: '', menu: null, _reveal: '[data-reveal]' }); },
+  pfIconPick(el) { pdoSetFolderIcon(currentPreset(), el.dataset.a, el.dataset.b); },
+  pfIconCustom() {
+    const v = psmUi.customIcon.trim();
+    if (!v || !psmUi.iconFor) return;
+    pdoSetFolderIcon(currentPreset(), psmUi.iconFor, v);
+    psmUi.iconFor = null;
+    psmUi.customIcon = '';
+  },
+  pfIconDone() { psmUi.iconFor = null; },
+  pfDelete(el) {
+    const id = el.dataset.a;
+    const presetName = currentPreset();
+    const cfg = pdoGetPresetConfig(presetName);
+    const f = cfg.folders[id];
+    if (!f) return;
+    psmAsk({ kind: 'delPF', id, danger: true, ok: psmT('del'), title: psmT('del_folder_q', f.name), body: psmT('del_pf_body'),
+      run() { pdoDeleteFolder(presetName, id); psmUi.pfOpen.delete(id); psmSay('ok', psmT('toast_deleted', f.name)); } });
+    return false;
+  },
+  pfJump(el) { pdoJumpFromPanel(el.dataset.a); return false; },
+  pfRemove(el) { pdoUnassignPrompt(currentPreset(), el.dataset.a); },
 
-function pdoAskTemplateApply() {
-  const name = parent$('#pdo-template-apply', parentDoc).val();
-  if (!name) return;
-  pdoTemplateConfirm = {
-    action: 'replace',
-    name,
-    label: psmT('confirm_tpl_apply', name),
-  };
-  renderPdoTemplatesPopover();
-}
+  // templates
+  tplSave() {
+    const typed = psmUi.tplName.trim();
+    if (!typed) return;
+    const names = Object.keys(pdoDbLoad().templates || {});
+    const ex = names.find(n => n.toLowerCase() === typed.toLowerCase());
+    const save = name => {
+      const r = pdoSaveTemplate(name);
+      if (!r) return;
+      psmUi.tplName = '';
+      psmSay(r === 'dup' ? 'info' : 'ok', r === 'dup' ? psmT('notify_tpl_dup') : (ex ? psmT('toast_tpl_updated') : psmT('toast_tpl_saved')));
+    };
+    if (ex) {
+      psmAsk({ kind: 'overTpl', id: 'save', danger: true, ok: psmT('overwrite'), title: psmT('tpl_over_q', ex), body: '', run: () => save(ex) });
+      return false;
+    }
+    save(typed);
+  },
+  tplApply(el) {
+    const n = el.dataset.a;
+    psmAsk({ kind: 'applyTpl', id: n, danger: false, ok: psmT('replace'), title: psmT('tpl_apply_q', n), body: '',
+      run() { if (pdoApplyTemplate(n)) { psmUi.pfOpen.clear(); psmSay('ok', psmT('toast_applied', n)); } } });
+    return false;
+  },
+  tplDelete(el) {
+    const n = el.dataset.a;
+    psmAsk({ kind: 'delTpl', id: n, danger: true, ok: psmT('del'), title: psmT('del_tpl_q', n), body: '',
+      run() { if (pdoDeleteTemplate(n)) psmSay('ok', psmT('toast_deleted', n)); } });
+    return false;
+  },
+});
 
-function bindPdoPanelDrag() {
-  const panelEl = parentDoc.querySelector('#pdo-panel');
-  if (!panelEl || panelEl.dataset.pdoDrag === '1') return;
-  panelEl.dataset.pdoDrag = '1';
-  parent$('#pdo-panel', parentDoc).on('mousedown touchstart', '.pdo-header', function(e) {
-    if ($(e.target).closest('button, input, select').length) return;
-    const src = e.originalEvent?.touches ? e.originalEvent.touches[0] : e;
-    const startX = src.clientX;
-    const startY = src.clientY;
-    const startTop = parseFloat(panelEl.style.top) || 0;
-    const startLeft = parseFloat(panelEl.style.left) || 0;
-    let moved = false;
-    function onMove(ev) {
-      const p = ev.originalEvent?.touches ? ev.originalEvent.touches[0] : ev;
-      const dx = p.clientX - startX;
-      const dy = p.clientY - startY;
-      if (!moved && (Math.abs(dx) > 4 || Math.abs(dy) > 4)) moved = true;
-      if (!moved) return;
-      const margin = 10;
-      const pw = panelEl.offsetWidth;
-      const ph = panelEl.offsetHeight;
-      panelEl.style.setProperty('top', Math.min(Math.max(margin, startTop + dy), window.parent.innerHeight - ph - margin) + 'px', 'important');
-      panelEl.style.setProperty('left', Math.min(Math.max(margin, startLeft + dx), window.parent.innerWidth - pw - margin) + 'px', 'important');
-    }
-    function onUp() {
-      parent$(parentDoc).off('mousemove.pdodrag touchmove.pdodrag', onMove).off('mouseup.pdodrag touchend.pdodrag', onUp);
-      if (moved) pdoPosSave(parseFloat(panelEl.style.top), parseFloat(panelEl.style.left));
-    }
-    parent$(parentDoc).on('mousemove.pdodrag touchmove.pdodrag', onMove).on('mouseup.pdodrag touchend.pdodrag', onUp);
-  });
-}
+Object.assign(PSM_INPUTS, {
+  newPF(v) { psmUi.newPF = v; return false; },
+  customIcon(v) { psmUi.customIcon = v; return false; },
+  tplName(v) { psmUi.tplName = v; if (psmUi.confirm?.kind === 'overTpl') psmUi.confirm = null; },
+});

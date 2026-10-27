@@ -3,26 +3,27 @@ const fs   = require('fs');
 const path = require('path');
 
 // Bump this when you want new dist filenames (e.g. v6 → v7).
-const OUTPUT_VERSION = 'v6';
+const OUTPUT_VERSION = 'v9';
 
 // ─── Source files in load order ───────────────────────────────────────────
 // Order matters: each file can only call functions declared before it or in
 // files that appear earlier in this list.
 const srcFiles = [
   'src/utils/i18n.js',      // locale detection + psmT() string table (must load first)
-  'src/core/store.js',      // constants, db helpers, shared state
-  'src/utils/helpers.js',   // TavernAPI wrappers, DOM utils, position helpers
-  'src/ui/styles.js',       // PSM_SCALE + injectStyles()
-  'src/core/snapshots.js',  // psmSave / psmApply / psmDelete
-  'src/ui/panel.js',        // all three panel views + event bindings
-  'src/ui/toolbar.js',      // showToast, createAndInjectUI, drag, open/close
+  'src/core/store.js',      // constants, db helpers, settings, shared UI state
+  'src/utils/helpers.js',   // TavernAPI wrappers, chat-ready guard, mutex
+  'src/ui/icons.js',        // inline SVG icons
+  'src/ui/styles.js',       // injectStyles(): window, entry row, shared atoms
+  'src/core/snapshots.js',  // psmSave / psmApply / psmRename / psmDelete
+  'src/core/original.js',   // original (disk) state row: psmApplyOriginal
+  'src/ui/panel.js',        // rendering, Presets tab, settings, picker, events
+  'src/ui/toolbar.js',      // status strip, entry points, open/close, placement
   'src/index.js',           // init()
   'src/divs/divs-store.js',
   'src/divs/divs-helpers.js',
   'src/divs/divs-styles.js',
   'src/divs/divs-decorator.js',
-  'src/divs/divs-panel.js',
-  'src/divs/divs-toolbar.js',
+  'src/divs/divs-panel.js', // Prompt folders tab + templates
   'src/divs/divs-index.js',
 ];
 
@@ -40,7 +41,7 @@ const HEADER = `(() => {
     parent$   = window.parent.$;
   } catch(e) { ERR('Failed to access parent:', e); return; }
 
-  const PSM_ALREADY_LOADED = parent$('#psm-panel, #psm-wand-item, #psm-openai-preset-shortcut-wrap', parentDoc).length > 0;
+  const PSM_ALREADY_LOADED = parent$('#psm-panel, #psm-wand-item, #psm-entry-row', parentDoc).length > 0;
 
 `;
 
@@ -80,7 +81,7 @@ function build() {
     enabled: true,
     name:    'Preset State Manager',
     id:      'preset-state-manager',
-    info:    'Floating draggable overlay to save and apply prompt on/off state snapshots per preset.',
+    info:    'Snapshots of prompt on/off states per preset, preset folders, prompt folders and prompt search.',
     button:  { enabled: false, buttons: [] },
     data:    {},
     content: js,

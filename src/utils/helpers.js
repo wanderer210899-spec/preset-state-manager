@@ -4,18 +4,6 @@ function currentPreset()  { try { return getLoadedPresetName(); }     catch(e) {
 function readPrompts()    { try { return getPreset('in_use').prompts; } catch(e) { ERR('getPreset:', e); return []; } }
 function allPresetNames() { try { return getPresetNames(); }           catch(e) { ERR('getPresetNames:', e); return []; } }
 
-// ─── Position helpers ─────────────────────────────────────────────────────
-
-function defaultPanelPos() {
-  const panelEl = parent$('#psm-panel', parentDoc)[0];
-  const pw = panelEl ? panelEl.offsetWidth  : 320;
-  const ph = panelEl ? panelEl.offsetHeight : 400;
-  return {
-    top:  Math.round((window.parent.innerHeight - ph) / 2),
-    left: Math.round((window.parent.innerWidth  - pw) / 2),
-  };
-}
-
 // ─── DOM / utility helpers ────────────────────────────────────────────────
 
 function esc(s) {
@@ -41,16 +29,6 @@ function getFolderForPreset(presetName) {
 
 function snapCountFor(presetName) {
   return Object.keys((dbLoad()[presetName] || {})).length;
-}
-
-function clampPanelToViewport() {
-  const panelEl = parent$('#psm-panel', parentDoc)[0];
-  if (!panelEl) return;
-  const margin = 10, pw = panelEl.offsetWidth, ph = panelEl.offsetHeight;
-  const top  = Math.min(Math.max(margin, parseFloat(panelEl.style.top)  || 0), window.parent.innerHeight - ph - margin);
-  const left = Math.min(Math.max(margin, parseFloat(panelEl.style.left) || 0), window.parent.innerWidth  - pw - margin);
-  panelEl.style.setProperty('top',  top  + 'px', 'important');
-  panelEl.style.setProperty('left', left + 'px', 'important');
 }
 
 function ensureFolder(name) {
@@ -89,6 +67,8 @@ function ensureFolder(name) {
 //
 // ARCHITECTURE:
 //   • initChatReadyListeners() — called ONCE from init().
+//   • #chat emptied (load start) → _chatReady = false, load pending until
+//     CHAT_CHANGED (or CHAT_LOAD_PENDING_MAX_MS); polls can't count as stable.
 //   • CHAT_CHANGED → _chatReady = false, start DOM poll + ceiling timer.
 //   • DOM poll every CHAT_DOM_POLL_MS: check parent #chat .mes count.
 //     If count unchanged AND no render event fired → increment stable counter.
@@ -110,6 +90,7 @@ const CHAT_STABLE_NEEDED     = 11;     // 11 × 150 ms = 1650 ms of total silenc
                                        // ~1–3 s afterward. 750 ms was too short;
                                        // 1600–1650 ms is the proven safe minimum.
 const CHAT_SETTLE_CEILING_MS = 120000; // 2 min absolute ceiling (empty chats etc.)
+const CHAT_LOAD_PENDING_MAX_MS = 30000; // max wait for CHAT_CHANGED after #chat was emptied
 
 let _chatReady        = true;  // assume ready at startup (chat already open)
 let _chatReadyWaiters = [];    // queued resolve() fns from waitForChatReady()
@@ -119,8 +100,20 @@ let _chatStableRuns   = 0;     // consecutive polls with identical DOM count
 let _chatLastMesCount = -1;    // DOM .mes count from previous poll
 let _chatRenderFired  = false; // did a render event fire since last poll?
 
+// LOAD START DETECTION:
+// In SillyTavern 1.17+ CHAT_CHANGED is emitted at the END of a chat load
+// (getChatResult, after printMessages). Before it, clearChat() empties #chat
+// and the in-memory chat while the file is still being fetched. Without this,
+// isChatReady() stays true for that whole window. Every load (open, switch,
+// reloadCurrentChat) empties #chat first, so an emptied #chat is the physical
+// start signal; the matching CHAT_CHANGED ends the pending state.
+let _chatLoadPending      = false;
+let _chatLoadPendingSince = 0;
+let _chatDomObserver      = null;
+
 // Called ONCE from init(). All listeners are permanent for the script lifetime.
 function initChatReadyListeners() {
+  _watchChatEmptied();
   eventOn(tavern_events.CHAT_CHANGED,                _onChatLoadBegins);
   eventOn(tavern_events.CHARACTER_MESSAGE_RENDERED,  _onRenderActivity);
   eventOn(tavern_events.USER_MESSAGE_RENDERED,       _onRenderActivity);
@@ -135,15 +128,34 @@ function initChatReadyListeners() {
 
 function isChatReady()  { return _chatReady; }
 
-// CHAT_CHANGED = a new chat is starting to load. Block all writes immediately.
+function _watchChatEmptied() {
+  const chatEl = parentDoc.getElementById('chat');
+  if (!chatEl) { ERR('chatReady: #chat not found — load-start detection off'); return; }
+  _chatDomObserver = new MutationObserver(() => {
+    if (_chatLoadPending || chatEl.querySelector('.mes')) return;
+    _chatLoadPending      = true;
+    _chatLoadPendingSince = Date.now();
+    LOG('chatReady: #chat emptied — load in progress, writes blocked');
+    _startChatBusy();
+  });
+  _chatDomObserver.observe(chatEl, { childList: true });
+  window.addEventListener('pagehide', () => _chatDomObserver?.disconnect());
+}
+
+// CHAT_CHANGED = a chat load reached its render stage. Block all writes immediately.
 function _onChatLoadBegins() {
+  _chatLoadPending = false;
+  _startChatBusy();
+  LOG('chatReady: CHAT_CHANGED — loading started, writes blocked');
+}
+
+function _startChatBusy() {
   _chatReady        = false;
   _chatStableRuns   = 0;
   _chatLastMesCount = -1;
   _chatRenderFired  = false;
   clearTimeout(_chatPollTimer);
   clearTimeout(_chatCeilingTimer);
-  LOG('chatReady: CHAT_CHANGED — loading started, writes blocked');
 
   // Absolute ceiling in case the chat is empty or events never fire.
   _chatCeilingTimer = setTimeout(() => {
@@ -171,8 +183,11 @@ function _doPoll() {
 
   const count = parent$('#chat .mes', parentDoc).length;
 
+  // While the chat file is still being fetched the empty DOM looks "stable".
+  const loadPending = _chatLoadPending && Date.now() - _chatLoadPendingSince < CHAT_LOAD_PENDING_MAX_MS;
+
   // Both conditions must hold: DOM count unchanged AND no render event fired.
-  if (count === _chatLastMesCount && !_chatRenderFired) {
+  if (count === _chatLastMesCount && !_chatRenderFired && !loadPending) {
     _chatStableRuns++;
   } else {
     _chatStableRuns   = 0;
@@ -192,7 +207,8 @@ function _doPoll() {
 function _markChatReady() {
   clearTimeout(_chatPollTimer);
   clearTimeout(_chatCeilingTimer);
-  _chatReady      = true;
+  _chatReady       = true;
+  _chatLoadPending = false;
   _chatStableRuns = 0;
   const waiters   = _chatReadyWaiters.splice(0);
   if (waiters.length) LOG('chatReady: unblocking ' + waiters.length + ' queued operation(s)');
@@ -246,4 +262,10 @@ function psmAcquire() {
   return true;
 }
 
-function psmRelease() { _psmBusy = false; }
+function psmRelease() {
+  _psmBusy = false;
+  // UI only: clear the "working" strip once the operation is over.
+  if (typeof psmBusyFinish === 'function') psmBusyFinish();
+}
+
+function psmIsBusy() { return _psmBusy; }

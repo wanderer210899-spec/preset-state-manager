@@ -2,36 +2,31 @@
 
 function initDivs() {
   if (parentDoc._pdoObserver) {
-    scheduleInjectPdoToolbar();
     schedulePdoRepaint();
     return;
   }
 
   injectDivStyles();
   initPdoDecorator();
-  scheduleInjectPdoToolbar();
 
   try {
     eventOn(tavern_events.OAI_PRESET_CHANGED_AFTER, () => {
-      pdoMassFolder = null;
-      pdoTemplateConfirm = null;
+      if (psmUi.sel?.kind === 'prompt') psmUi.sel = null;
+      psmUi.iconFor = null;
+      psmUi.pfOpen.clear();
       const searchInput = parentDoc.querySelector('#pdo-search-input');
       if (searchInput) searchInput.value = '';
+      parentDoc.querySelector('#pdo-search-clear')?.setAttribute('hidden', '');
       pdoApplySearch('');
-      if (pdoPanelOpen) renderPdoPanel();
       schedulePdoRepaint();
+      if (panelOpen) psmRender();
     });
   } catch(e) { ERR('pdo eventOn failed:', e); }
-
-  window.parent.addEventListener('resize', () => {
-    if (pdoPanelOpen) pdoClampPanelToViewport();
-  });
 
   $(window).on('pagehide', () => {
     try { parentDoc._pdoObserver?.disconnect(); } catch (_) {}
     delete parentDoc._pdoObserver;
-    parent$('#pdo-config-btn, #pdo-panel, #pdo-search-bar, #' + PDO_STYLE_ID + ', #' + PDO_COLLAPSE_STYLE_ID, parentDoc).remove();
-    parent$('.pdo-popup, .pdo-template-panel', parentDoc).remove();
+    parent$('#pdo-search-bar, #' + PDO_STYLE_ID + ', #' + PDO_COLLAPSE_STYLE_ID, parentDoc).remove();
   });
 
   LOG('Prompt Folders ready');

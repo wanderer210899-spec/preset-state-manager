@@ -76,7 +76,7 @@ function pdoAfterStoreWrite(opts = {}) {
   const repaint = opts.repaint !== false;
   const panel   = opts.panel !== false;
   if (repaint && typeof schedulePdoRepaint === 'function') schedulePdoRepaint();
-  if (panel && typeof renderPdoPanel === 'function' && pdoPanelOpen) renderPdoPanel();
+  if (panel && panelOpen && psmUi.tab === 'folders') psmRender();
 }
 
 function pdoDbSave(db, opts = {}) {
@@ -179,7 +179,12 @@ function pdoRenameFolder(presetName, folderId, name) {
 }
 
 function pdoSetFolderIcon(presetName, folderId, icon) {
-  const clean = Array.from(String(icon || '').trim())[0] || PDO_DEFAULT_ICON;
+  // First whole character, so emoji like ✍️ or 👩‍💻 keep all their parts.
+  const str = String(icon || '').trim();
+  let first = '';
+  try { first = [...new Intl.Segmenter().segment(str)][0]?.segment || ''; }
+  catch (_) { first = Array.from(str)[0] || ''; }
+  const clean = first || PDO_DEFAULT_ICON;
   pdoWithPresetConfig(presetName, cfg => {
     if (cfg.folders[folderId]) cfg.folders[folderId].icon = clean;
   });
@@ -251,8 +256,7 @@ function pdoSaveTemplate(name) {
     assignmentsByName,
   };
   pdoDbSave(db, { repaint: false });
-  if (duplicate) pdoNotify(psmT('notify_tpl_dup'));
-  return true;
+  return duplicate ? 'dup' : true;
 }
 
 function pdoApplyTemplate(name) {

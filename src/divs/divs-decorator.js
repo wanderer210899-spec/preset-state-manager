@@ -5,6 +5,12 @@ let pdoApplyingDecorations = false;
 let pdoSearchQuery = '';
 let pdoSearchDebounce = null;
 
+// Folder headers stay off while the tool is off or the user hid them.
+// SillyTavern's own drag works only then.
+function pdoHeadersOff() {
+  return pdoIsHidden() || !settingsLoad().tools.folders;
+}
+
 function schedulePdoRepaint() {
   if (pdoRepaintQueued) return;
   pdoRepaintQueued = true;
@@ -71,11 +77,12 @@ function pdoNativeHeader(folderId, folder, count, collapsed) {
   li.dataset.pdoFolder = folderId;
   li.setAttribute('role', 'button');
   li.setAttribute('tabindex', '0');
+  li.setAttribute('aria-expanded', String(!collapsed));
   li.innerHTML = `
-    <span class="pdo-native-chevron" aria-hidden="true">${collapsed ? PDO_GLYPHS.right : PDO_GLYPHS.down}</span>
-    <span class="pdo-native-icon">${esc(folder.icon || PDO_DEFAULT_ICON)}</span>
+    ${psmIcon('chevR', 'pdo-native-chevron' + (collapsed ? '' : ' open'))}
+    <span class="pdo-native-icon" aria-hidden="true">${esc(folder.icon || PDO_DEFAULT_ICON)}</span>
     <span class="pdo-native-title">${esc(folder.name)}</span>
-    <span class="pdo-native-count">(${count})</span>
+    <span class="pdo-native-count">${count}</span>
   `;
   const toggle = ev => {
     ev.preventDefault();
@@ -85,8 +92,7 @@ function pdoNativeHeader(folderId, folder, count, collapsed) {
     pdoSetCollapsed(presetName, folderId, next, { panel: true, repaint: false });
     const list = pdoListEl();
     if (list) list.classList.toggle(pdoCollapsedClass(folderId), next);
-    const liveChevron = list?.querySelector('.pdo-folder-header-' + folderId + ' .pdo-native-chevron');
-    if (liveChevron) liveChevron.textContent = next ? PDO_GLYPHS.right : PDO_GLYPHS.down;
+    pdoSetHeaderOpen(list, folderId, !next);
   };
   li.addEventListener('click', toggle);
   li.addEventListener('keydown', ev => {
@@ -99,11 +105,18 @@ function pdoNativeHeader(folderId, folder, count, collapsed) {
   return li;
 }
 
+function pdoSetHeaderOpen(list, folderId, open) {
+  const header = list?.querySelector(':scope > .pdo-folder-header-' + folderId);
+  if (!header) return;
+  header.setAttribute('aria-expanded', String(open));
+  header.querySelector('.pdo-native-chevron')?.classList.toggle('open', open);
+}
+
 function pdoManageSortable() {
   try {
     const $list = parent$('#completion_prompt_manager_list', parentDoc);
     if (!$list.length || !$list.sortable('instance')) return;
-    if (pdoIsHidden()) {
+    if (pdoHeadersOff()) {
       $list.sortable('enable');
     } else {
       $list.sortable('disable');
@@ -117,7 +130,8 @@ function applyDecorations() {
 
   pdoEnsureSearchBar();
 
-  if (pdoIsHidden()) {
+  if (pdoHeadersOff()) {
+    list.classList.remove('pdo-headers-on');
     list.querySelectorAll(':scope > .pdo-folder-header').forEach(h => h.remove());
     pdoCleanListClasses(list);
     list.classList.remove('pdo-search-active');
@@ -138,6 +152,7 @@ function applyDecorations() {
 
   pdoApplyingDecorations = true;
   try {
+    list.classList.add('pdo-headers-on');
     list.querySelectorAll(':scope > .pdo-folder-header').forEach(header => header.remove());
     pdoCleanListClasses(list);
     rows.forEach(pdoCleanPromptRow);
@@ -228,50 +243,86 @@ function pdoGotoPrompt(promptId) {
   if (folderId && cfg.folders[folderId] && pdoIsCollapsed(presetName, folderId, cfg.folders[folderId])) {
     pdoSetCollapsed(presetName, folderId, false, { panel: true, repaint: false });
     list.classList.remove(pdoCollapsedClass(folderId));
-    const chevron = list.querySelector('.pdo-folder-header-' + folderId + ' .pdo-native-chevron');
-    if (chevron) chevron.textContent = PDO_GLYPHS.down;
+    pdoSetHeaderOpen(list, folderId, true);
   }
 
   const raf = window.parent.requestAnimationFrame || window.requestAnimationFrame;
   raf(() => {
-    row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    psmScrollAboveSheet(row, 'center');
     row.classList.add('pdo-flash');
-    setTimeout(() => row.classList.remove('pdo-flash'), 1200);
+    setTimeout(() => row.classList.remove('pdo-flash'), 1700);
   });
 }
 
+// The bar above SillyTavern's prompt list: one row with the search box and
+// collapse/expand all. The search box is built once and kept, so typing is
+// never interrupted; the buttons are rebuilt only when the settings change.
 function pdoEnsureSearchBar() {
   const list = pdoListEl();
   if (!list || !list.parentNode) return;
-  if (parentDoc.getElementById('pdo-search-bar')) return;
-  const bar = parentDoc.createElement('div');
-  bar.id = 'pdo-search-bar';
-  bar.setAttribute('data-pdo-ignore', '1');
-  bar.innerHTML =
-    '<span class="pdo-search-icon" aria-hidden="true">' + PDO_GLYPHS.search + '</span>' +
-    '<input type="text" id="pdo-search-input" placeholder="' + esc(psmT('search_prompts_ph')) + '" autocomplete="off" />' +
-    '<button type="button" id="pdo-search-clear" class="pdo-search-btn" title="' + esc(psmT('clear_search')) + '">' + PDO_GLYPHS.close + '</button>' +
-    '<button type="button" id="pdo-collapse-all" class="pdo-search-btn" title="' + esc(psmT('collapse_all')) + '"><i class="fa-solid fa-angles-up"></i></button>' +
-    '<button type="button" id="pdo-expand-all" class="pdo-search-btn" title="' + esc(psmT('expand_all')) + '"><i class="fa-solid fa-angles-down"></i></button>';
-  list.parentNode.insertBefore(bar, list);
-  pdoStopBubble(bar);
+  const s = settingsLoad();
+  let bar = parentDoc.getElementById('pdo-search-bar');
 
+  if (!s.tools.search) {
+    bar?.remove();
+    if (pdoSearchQuery) { pdoSearchQuery = ''; list.classList.remove('pdo-search-active'); }
+    return;
+  }
+
+  if (!bar) {
+    bar = parentDoc.createElement('div');
+    bar.id = 'pdo-search-bar';
+    bar.setAttribute('data-pdo-ignore', '1');
+    bar.innerHTML =
+      '<div class="psm-srch">' + psmIcon('search') +
+        '<input type="text" id="pdo-search-input" class="psm-inp" placeholder="' + esc(psmT('search_prompts_short')) + '" aria-label="' + esc(psmT('search_prompts_label')) + '" autocomplete="off" />' +
+        '<button type="button" id="pdo-search-clear" class="psm-ib psm-sm mut" aria-label="' + esc(psmT('clear_search')) + '" title="' + esc(psmT('clear_search')) + '" hidden>' + psmIcon('x') + '</button>' +
+      '</div><span id="pdo-bar-row"></span>';
+    list.parentNode.insertBefore(bar, list);
+    pdoStopBubble(bar);
+    pdoBindSearchBar(bar);
+  } else if (bar.nextElementSibling !== list) {
+    list.parentNode.insertBefore(bar, list);
+  }
+
+  const sig = [s.tools.folders, PSM_LANG].join('|');
+  const row = bar.querySelector('#pdo-bar-row');
+  if (row.dataset.sig !== sig) {
+    row.dataset.sig = sig;
+    row.hidden = !s.tools.folders;
+    row.innerHTML = !s.tools.folders ? '' :
+      ibHtml('collapse', null, psmT('collapse_all'), { cls: 'mut', attrs: ' data-bar="collapse"' }) +
+      ibHtml('expand', null, psmT('expand_all'), { cls: 'mut', attrs: ' data-bar="expand"' });
+  }
+}
+
+function pdoBindSearchBar(bar) {
   const input = bar.querySelector('#pdo-search-input');
   const clear = bar.querySelector('#pdo-search-clear');
   input.value = pdoSearchQuery;
-  input.addEventListener('input', e => {
+  clear.hidden = !input.value;
+  const run = () => {
+    clear.hidden = !input.value;
     clearTimeout(pdoSearchDebounce);
-    const val = e.target.value;
+    const val = input.value;
     pdoSearchDebounce = setTimeout(() => pdoApplySearch(val), 150);
-  });
+  };
+  input.addEventListener('input', e => { if (!e.isComposing) run(); });
+  input.addEventListener('compositionend', run);
   clear.addEventListener('click', () => {
     clearTimeout(pdoSearchDebounce);
     input.value = '';
+    clear.hidden = true;
     pdoApplySearch('');
     input.focus();
   });
-  bar.querySelector('#pdo-collapse-all').addEventListener('click', () => pdoSetAllFoldersCollapsed(true));
-  bar.querySelector('#pdo-expand-all').addEventListener('click', () => pdoSetAllFoldersCollapsed(false));
+  bar.addEventListener('click', ev => {
+    const b = ev.target.closest('[data-bar]');
+    if (!b) return;
+    const what = b.dataset.bar;
+    if (what === 'collapse') pdoSetAllFoldersCollapsed(true);
+    if (what === 'expand') pdoSetAllFoldersCollapsed(false);
+  });
 }
 
 function pdoSetAllFoldersCollapsed(collapsed) {
@@ -282,8 +333,7 @@ function pdoSetAllFoldersCollapsed(collapsed) {
   Object.keys(cfg.folders || {}).forEach(folderId => {
     pdoSetCollapsed(presetName, folderId, collapsed, { panel: false, repaint: false });
     list.classList.toggle(pdoCollapsedClass(folderId), collapsed);
-    const chevron = list.querySelector('.pdo-folder-header-' + folderId + ' .pdo-native-chevron');
-    if (chevron) chevron.textContent = collapsed ? PDO_GLYPHS.right : PDO_GLYPHS.down;
+    pdoSetHeaderOpen(list, folderId, !collapsed);
   });
 }
 
