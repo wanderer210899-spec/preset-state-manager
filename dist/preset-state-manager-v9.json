@@ -3,7 +3,7 @@
   "enabled": true,
   "name": "Preset State Manager",
   "id": "preset-state-manager",
-  "info": "Snapshots of prompt on/off states per preset, preset folders, prompt folders and prompt search.",
+  "info": "v9 Snapshots of prompt on/off states per preset, preset folders, prompt folders and prompt search.",
   "button": {
     "enabled": false,
     "buttons": []

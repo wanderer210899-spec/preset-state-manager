@@ -3,7 +3,7 @@
   "enabled": true,
   "name": "Preset State Manager",
   "id": "preset-state-manager",
-  "info": "Floating draggable overlay to save and apply prompt on/off state snapshots per preset.",
+  "info": "v7 Floating draggable overlay to save and apply prompt on/off state snapshots per preset.",
   "button": {
     "enabled": false,
     "buttons": []
