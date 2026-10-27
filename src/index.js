@@ -13,6 +13,7 @@ function init() {
     // These run for the lifetime of the script and track whether it is
     // safe to write — independently of any preset switch.
     initChatReadyListeners();
+    psmInitRenameListeners();
 
     try {
       eventOn(tavern_events.OAI_PRESET_CHANGED_AFTER, () => {

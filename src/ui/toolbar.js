@@ -33,7 +33,7 @@ function psmBusyBegin(presetName, snapName) {
   clearTimeout(_statusTimer);
   clearInterval(_busyTicker);
   psmUi.status = null;
-  psmUi.busy = { presetName, snapName, label: snapName && snapName !== ORIGINAL_KEY ? snapName : null, since: Date.now() };
+  psmUi.busy = { presetName, snapName, label: snapName && snapName !== ORIGINAL_KEY && snapName !== RENAME_KEY ? snapName : null, since: Date.now() };
   _busyTicker = setInterval(psmRenderStrip, 1000);
   psmRender();
 }
@@ -53,7 +53,8 @@ function psmStripHtml() {
   if (b) {
     const secs = Math.floor((Date.now() - b.since) / 1000);
     const what = b.label ? psmT('applying_x', b.label)
-      : b.snapName === ORIGINAL_KEY ? psmT('resetting') : psmT('switching_x', b.presetName);
+      : b.snapName === ORIGINAL_KEY ? psmT('resetting')
+      : b.snapName === RENAME_KEY ? psmT('renaming_x', b.presetName) : psmT('switching_x', b.presetName);
     const text = secs < 1 ? what + '…'
       : what + (isChatReady() ? '' : ' · ' + psmT('waiting_chat')) + ' · ' + secs + 's';
     return `<div class="psm-strip busy" role="status"><span class="psm-spin" aria-hidden="true"></span><span class="psm-strip-t">${esc(text)}</span></div>`;

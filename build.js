@@ -3,7 +3,7 @@ const fs   = require('fs');
 const path = require('path');
 
 // Bump this when you want new dist filenames (e.g. v6 → v7).
-const OUTPUT_VERSION = 'v9';
+const OUTPUT_VERSION = 'v10';
 
 // ─── Source files in load order ───────────────────────────────────────────
 // Order matters: each file can only call functions declared before it or in
@@ -16,6 +16,7 @@ const srcFiles = [
   'src/ui/styles.js',       // injectStyles(): window, entry row, shared atoms
   'src/core/snapshots.js',  // psmSave / psmApply / psmRename / psmDelete
   'src/core/original.js',   // original (disk) state row: psmApplyOriginal
+  'src/core/rename.js',     // PSM data follows SillyTavern's own preset rename
   'src/ui/panel.js',        // rendering, Presets tab, settings, picker, events
   'src/ui/toolbar.js',      // status strip, entry points, open/close, placement
   'src/index.js',           // init()
@@ -81,7 +82,7 @@ function build() {
     enabled: true,
     name:    'Preset State Manager',
     id:      'preset-state-manager',
-    info:    'Snapshots of prompt on/off states per preset, preset folders, prompt folders and prompt search.',
+    info:    OUTPUT_VERSION + ' Snapshots of prompt on/off states per preset, preset folders, prompt folders and prompt search.',
     button:  { enabled: false, buttons: [] },
     data:    {},
     content: js,

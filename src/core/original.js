@@ -31,6 +31,9 @@ function psmClearLastApplied(presetName) {
 
 // Prompt on/off states of the preset as last saved. null if unreadable.
 function originalStatesFor(presetName) {
+  // Briefly true during SillyTavern's rename: the old file is gone before
+  // PSM hears "renamed".
+  if (!allPresetNames().includes(presetName)) return null;
   try {
     const prompts = getPreset(presetName).prompts;
     const states  = {};
